@@ -408,6 +408,391 @@ export class PageManager {
     }
   }
 
+  async findInternalLinks(): Promise<Array<{
+    url: string;
+    text: string;
+    isInternal: boolean;
+  }>> {
+    const page = await this.getPage();
+
+    try {
+      const currentDomain = new URL(page.url()).hostname;
+
+      const links = await page.evaluate((currentDomain) => {
+        const anchors = Array.from(document.querySelectorAll('a[href]'));
+        return anchors.map(anchor => {
+          const href = (anchor as HTMLAnchorElement).href;
+          let isInternal = false;
+
+          try {
+            const linkUrl = new URL(href);
+            isInternal = linkUrl.hostname === currentDomain;
+          } catch {
+            isInternal = href.startsWith('/') || href.startsWith('./') || href.startsWith('../');
+          }
+
+          return {
+            url: href,
+            text: anchor.textContent?.trim() || '',
+            isInternal
+          };
+        });
+      }, currentDomain);
+
+      return links.filter(link => link.isInternal);
+    } catch (error) {
+      logger.error('Failed to find internal links:', error instanceof Error ? error : new Error('Unknown error'));
+      throw error;
+    }
+  }
+
+  async findForms(): Promise<Array<{
+    id: string;
+    action: string;
+    method: string;
+    fields: Array<{
+      name: string;
+      type: string;
+      required: boolean;
+      label: string;
+      placeholder: string;
+      options?: string[];
+    }>;
+    submitButtons: Array<{
+      text: string;
+      type: string;
+    }>;
+  }>> {
+    const page = await this.getPage();
+
+    try {
+      const forms = await page.evaluate(() => {
+        const formElements = Array.from(document.querySelectorAll('form'));
+
+        return formElements.map((form, index) => {
+          const formId = form.id || `form-${index}`;
+          const action = form.action || window.location.href;
+          const method = form.method.toLowerCase() || 'get';
+
+          // Find all input, select, textarea elements
+          const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
+          const fields = inputs
+            .filter(input => {
+              const type = (input as HTMLInputElement).type;
+              return !['submit', 'button', 'reset', 'image'].includes(type);
+            })
+            .map(input => {
+              const element = input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+              const label = form.querySelector(`label[for="${element.id}"]`)?.textContent?.trim() ||
+                           element.closest('label')?.textContent?.trim() || '';
+
+              let options: string[] | undefined = undefined;
+              if (element.tagName === 'SELECT') {
+                const selectElement = element as HTMLSelectElement;
+                options = Array.from(selectElement.options).map(option => option.text);
+              }
+
+              return {
+                name: element.name || element.id || '',
+                type: (element as HTMLInputElement).type || element.tagName.toLowerCase(),
+                required: element.hasAttribute('required'),
+                label: label.replace(element.value || '', '').trim(),
+                placeholder: (element as HTMLInputElement).placeholder || '',
+                options
+              };
+            });
+
+          // Find submit buttons
+          const submitButtons = Array.from(form.querySelectorAll('input[type="submit"], button[type="submit"], button:not([type])'))
+            .map(button => ({
+              text: (button as HTMLInputElement).value || button.textContent?.trim() || '',
+              type: (button as HTMLInputElement).type || 'submit'
+            }));
+
+          return {
+            id: formId,
+            action,
+            method,
+            fields,
+            submitButtons
+          };
+        });
+      });
+
+      logger.debug(`Found ${forms.length} forms on page`);
+      return forms;
+    } catch (error) {
+      logger.error('Failed to find forms:', error instanceof Error ? error : new Error('Unknown error'));
+      throw error;
+    }
+  }
+
+  async analyzeFormFields(formId: string): Promise<{
+    validation: Array<{
+      field: string;
+      validationType: string;
+      isValid: boolean;
+      message: string;
+    }>;
+    accessibility: Array<{
+      field: string;
+      issue: string;
+      severity: 'low' | 'medium' | 'high';
+    }>;
+  }> {
+    const page = await this.getPage();
+
+    try {
+      const analysis = await page.evaluate((formId) => {
+        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
+        if (!form) return { validation: [], accessibility: [] };
+
+        const validation: Array<{
+          field: string;
+          validationType: string;
+          isValid: boolean;
+          message: string;
+        }> = [];
+
+        const accessibility: Array<{
+          field: string;
+          issue: string;
+          severity: 'low' | 'medium' | 'high';
+        }> = [];
+
+        const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
+
+        inputs.forEach((input) => {
+          const element = input as HTMLInputElement;
+          const fieldName = element.name || element.id || element.placeholder || 'unnamed';
+
+          // Validation analysis
+          if (element.type === 'email') {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            validation.push({
+              field: fieldName,
+              validationType: 'email',
+              isValid: !element.value || emailRegex.test(element.value),
+              message: element.value && !emailRegex.test(element.value) ? 'Invalid email format' : 'Valid'
+            });
+          }
+
+          if (element.type === 'url') {
+            try {
+              new URL(element.value);
+              validation.push({
+                field: fieldName,
+                validationType: 'url',
+                isValid: true,
+                message: 'Valid URL'
+              });
+            } catch {
+              validation.push({
+                field: fieldName,
+                validationType: 'url',
+                isValid: !element.value,
+                message: element.value ? 'Invalid URL format' : 'Empty'
+              });
+            }
+          }
+
+          if (element.hasAttribute('required')) {
+            validation.push({
+              field: fieldName,
+              validationType: 'required',
+              isValid: !!element.value,
+              message: element.value ? 'Required field filled' : 'Required field is empty'
+            });
+          }
+
+          // Accessibility analysis
+          const label = form.querySelector(`label[for="${element.id}"]`) || element.closest('label');
+          if (!label && element.type !== 'hidden') {
+            accessibility.push({
+              field: fieldName,
+              issue: 'Missing label',
+              severity: 'high'
+            });
+          }
+
+          if (element.hasAttribute('required') && !element.hasAttribute('aria-required')) {
+            accessibility.push({
+              field: fieldName,
+              issue: 'Missing aria-required attribute',
+              severity: 'medium'
+            });
+          }
+
+          if (!element.id && !element.name) {
+            accessibility.push({
+              field: fieldName,
+              issue: 'Missing id and name attributes',
+              severity: 'medium'
+            });
+          }
+        });
+
+        return { validation, accessibility };
+      }, formId);
+
+      return analysis;
+    } catch (error) {
+      logger.error('Failed to analyze form fields:', error instanceof Error ? error : new Error('Unknown error'));
+      throw error;
+    }
+  }
+
+  async testFormSubmission(formId: string, testData?: Record<string, string>): Promise<{
+    success: boolean;
+    responseStatus: number;
+    responseUrl: string;
+    errors: string[];
+    warnings: string[];
+    submissionTime: number;
+  }> {
+    const page = await this.getPage();
+
+    try {
+      const startTime = Date.now();
+
+      // Fill form with test data
+      const fillResult = await page.evaluate(({ formId, testData }: { formId: string, testData?: Record<string, string> }) => {
+        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
+        if (!form) return { success: false, error: 'Form not found' };
+
+        const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
+
+        inputs.forEach((input) => {
+          const element = input as HTMLInputElement;
+
+          if (element.type === 'hidden' || element.type === 'submit' || element.type === 'button') {
+            return;
+          }
+
+          const fieldName = element.name || element.id;
+          if (!fieldName) return;
+
+          // Use provided test data or generate appropriate test values
+          let testValue = testData?.[fieldName];
+
+          if (!testValue) {
+            switch (element.type) {
+              case 'email':
+                testValue = 'test@example.com';
+                break;
+              case 'tel':
+                testValue = '+1234567890';
+                break;
+              case 'url':
+                testValue = 'https://example.com';
+                break;
+              case 'number':
+                const min = parseFloat(element.min) || 1;
+                const max = parseFloat(element.max) || 100;
+                testValue = String(Math.floor(Math.random() * (max - min) + min));
+                break;
+              case 'date':
+                testValue = new Date().toISOString().split('T')[0];
+                break;
+              case 'checkbox':
+                element.checked = true;
+                return;
+              case 'radio':
+                // Only select the first radio button in each group
+                const radios = form.querySelectorAll(`input[type="radio"][name="${element.name}"]`);
+                if (radios[0] === element) {
+                  element.checked = true;
+                }
+                return;
+              default:
+                testValue = element.placeholder || `Test ${fieldName}`;
+            }
+          }
+
+          if (element.tagName === 'SELECT') {
+            const selectElement = input as HTMLSelectElement;
+            if (selectElement.options.length > 1) {
+              selectElement.selectedIndex = 1; // Skip the first option (usually placeholder)
+            }
+          } else {
+            element.value = testValue;
+          }
+        });
+
+        return { success: true, error: null };
+      }, { formId, testData }) as { success: boolean; error: string | null };
+
+      if (!fillResult.success) {
+        return {
+          success: false,
+          responseStatus: 0,
+          responseUrl: '',
+          errors: [fillResult.error || 'Failed to fill form'],
+          warnings: [],
+          submissionTime: Date.now() - startTime
+        };
+      }
+
+      // Set up response listener
+      let responseReceived = false;
+      let responseStatus = 0;
+      let responseUrl = '';
+      const errors: string[] = [];
+      const warnings: string[] = [];
+
+      const responsePromise = new Promise<void>((resolve) => {
+        page.on('response', (response) => {
+          responseStatus = response.status();
+          responseUrl = response.url();
+          responseReceived = true;
+          resolve();
+        });
+      });
+
+      // Submit the form
+      await page.evaluate((formId) => {
+        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
+        if (form) {
+          (form as HTMLFormElement).submit();
+        }
+      }, formId);
+
+      // Wait for response or timeout
+      await Promise.race([
+        responsePromise,
+        new Promise((resolve) => setTimeout(resolve, 10000)) // 10 second timeout
+      ]);
+
+      if (!responseReceived) {
+        warnings.push('No response received within timeout');
+      }
+
+      if (responseStatus >= 400) {
+        errors.push(`HTTP error: ${responseStatus}`);
+      }
+
+      return {
+        success: responseReceived && responseStatus < 400,
+        responseStatus,
+        responseUrl,
+        errors,
+        warnings,
+        submissionTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      logger.error('Failed to test form submission:', error instanceof Error ? error : new Error('Unknown error'));
+      return {
+        success: false,
+        responseStatus: 0,
+        responseUrl: '',
+        errors: [error instanceof Error ? error.message : 'Unknown error occurred'],
+        warnings: [],
+        submissionTime: Date.now()
+      };
+    }
+  }
+
   private async destroyCurrentPage(): Promise<void> {
     if (this.activePage && !this.activePage.isClosed()) {
       try {

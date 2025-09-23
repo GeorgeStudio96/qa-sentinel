@@ -6,11 +6,17 @@ import {
   BrowserPoolConfig,
   MemoryMeasurement,
   AccessibilityResult,
-  BrokenLinksResult
+  BrokenLinksResult,
+  EnhancedScanRequest,
+  MultiPageScanResult,
+  PageScanResult,
+  FormScanOptions,
+  InternalLink
 } from '../utils/types';
 import { BrowserPoolManager } from '../browser-pool/BrowserPoolManager';
 import { PageManager } from '../browser-pool/PageManager';
 import { MemoryMonitor } from '../monitoring/MemoryMonitor';
+import { FormTestingEngine } from './FormTestingEngine';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('qa-scanning-engine');
@@ -18,7 +24,8 @@ const logger = createLogger('qa-scanning-engine');
 export class QAScanningEngine {
   private browserPool: BrowserPoolManager;
   private memoryMonitor: MemoryMonitor;
-  private activScans = new Map<string, Promise<ScanResult>>();
+  private formTestingEngine: FormTestingEngine;
+  private activScans = new Map<string, Promise<ScanResult | MultiPageScanResult>>();
   private scanStats = {
     totalScans: 0,
     successfulScans: 0,
@@ -54,6 +61,9 @@ export class QAScanningEngine {
       ...defaultMemoryOptions,
       ...(options.memoryMonitorOptions || {})
     });
+
+    // Initialize form testing engine
+    this.formTestingEngine = new FormTestingEngine();
 
     this.memoryMonitor.start();
   }
@@ -303,6 +313,285 @@ export class QAScanningEngine {
     });
 
     return results;
+  }
+
+  async scanWebsiteWithForms(request: EnhancedScanRequest): Promise<MultiPageScanResult> {
+    const scanId = `enhanced-scan-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const startTime = Date.now();
+
+    logger.info(`Starting enhanced scan with forms for ${request.url}`, { scanId });
+
+    // Check if we already have too many concurrent scans
+    if (this.activScans.size >= 10) {
+      throw new Error('Too many concurrent scans. Please try again later.');
+    }
+
+    const scanPromise = this.performEnhancedScan(request, scanId, startTime);
+    this.activScans.set(scanId, scanPromise);
+
+    try {
+      const result = await scanPromise;
+      this.updateEnhancedScanStats(result, startTime);
+      return result;
+    } finally {
+      this.activScans.delete(scanId);
+    }
+  }
+
+  private async performEnhancedScan(
+    request: EnhancedScanRequest,
+    scanId: string,
+    startTime: number
+  ): Promise<MultiPageScanResult> {
+    const maxPages = request.options?.maxPages || 5;
+    const pagesToScan: string[] = [request.url];
+    const scannedPages = new Set<string>();
+    const pageResults: PageScanResult[] = [];
+
+    try {
+      // First, discover internal links from the main page
+      const internalLinks = await this.discoverInternalLinks(request.url, maxPages - 1);
+
+      // Add discovered links to pages to scan (limit to maxPages total)
+      for (const link of internalLinks) {
+        if (pagesToScan.length >= maxPages) break;
+        if (!pagesToScan.includes(link.url)) {
+          pagesToScan.push(link.url);
+        }
+      }
+
+      logger.info(`Will scan ${pagesToScan.length} pages for forms`, { scanId });
+
+      // Scan each page
+      for (const pageUrl of pagesToScan) {
+        if (scannedPages.has(pageUrl)) continue;
+
+        try {
+          const pageResult = await this.scanSinglePageForForms(
+            pageUrl,
+            request.options,
+            scanId
+          );
+          pageResults.push(pageResult);
+          scannedPages.add(pageUrl);
+
+          logger.debug(`Completed scan for page: ${pageUrl}`, {
+            scanId,
+            formsFound: pageResult.forms.length,
+            success: pageResult.success
+          });
+
+        } catch (error) {
+          logger.error(`Failed to scan page ${pageUrl}:`, error instanceof Error ? error : { error: String(error) });
+
+          // Add error result for failed page
+          pageResults.push({
+            url: pageUrl,
+            success: false,
+            timestamp: Date.now(),
+            duration: 0,
+            forms: [],
+            errors: [error instanceof Error ? error.message : 'Unknown error occurred']
+          });
+        }
+      }
+
+      // Generate summary
+      const totalForms = pageResults.reduce((sum, page) => sum + page.forms.length, 0);
+      const formsWithIssues = pageResults.reduce((sum, page) => {
+        return sum + page.forms.filter(form =>
+          form.fieldAnalysis.validation.some(v => !v.isValid) ||
+          form.fieldAnalysis.accessibility.length > 0 ||
+          !form.submissionResult.success
+        ).length;
+      }, 0);
+
+      const result: MultiPageScanResult = {
+        mainUrl: request.url,
+        pages: pageResults,
+        summary: {
+          totalPages: pageResults.length,
+          successfulPages: pageResults.filter(p => p.success).length,
+          totalForms,
+          formsWithIssues,
+          totalDuration: Date.now() - startTime
+        },
+        timestamp: Date.now()
+      };
+
+      logger.info(`Enhanced scan completed`, {
+        scanId,
+        totalPages: result.summary.totalPages,
+        totalForms: result.summary.totalForms,
+        formsWithIssues: result.summary.formsWithIssues,
+        duration: result.summary.totalDuration
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error(`Enhanced scan failed`, { scanId, url: request.url, error });
+      throw error;
+    }
+  }
+
+  private async discoverInternalLinks(
+    url: string,
+    maxLinks: number
+  ): Promise<InternalLink[]> {
+    let acquiredBrowser;
+    let pageManager: PageManager | null = null;
+
+    try {
+      // Acquire browser from pool
+      acquiredBrowser = await this.browserPool.acquire(30000);
+
+      // Create page manager
+      pageManager = new PageManager(acquiredBrowser.browser, {
+        pageTimeout: 30000,
+        maxPagesPerBrowser: 5
+      });
+
+      // Navigate to URL
+      await pageManager.navigateToUrl(url, {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
+
+      // Find internal links
+      const internalLinks = await pageManager.findInternalLinks();
+
+      // Return unique links (limit to maxLinks)
+      const uniqueLinks = internalLinks
+        .filter((link, index, self) =>
+          self.findIndex(l => l.url === link.url) === index
+        )
+        .slice(0, maxLinks);
+
+      logger.debug(`Discovered ${uniqueLinks.length} internal links from ${url}`);
+      return uniqueLinks;
+
+    } finally {
+      // Cleanup resources
+      if (pageManager) {
+        await pageManager.destroy().catch(err =>
+          logger.debug('Error destroying page manager:', err)
+        );
+      }
+
+      if (acquiredBrowser) {
+        await acquiredBrowser.release().catch(err =>
+          logger.debug('Error releasing browser:', err)
+        );
+      }
+    }
+  }
+
+  private async scanSinglePageForForms(
+    url: string,
+    options?: FormScanOptions,
+    scanId?: string
+  ): Promise<PageScanResult> {
+    let acquiredBrowser;
+    let pageManager: PageManager | null = null;
+    const startTime = Date.now();
+
+    try {
+      // Acquire browser from pool
+      acquiredBrowser = await this.browserPool.acquire(30000);
+
+      // Create page manager
+      pageManager = new PageManager(acquiredBrowser.browser, {
+        pageTimeout: options?.timeout || 30000,
+        maxPagesPerBrowser: 5
+      });
+
+      // Navigate to URL
+      await pageManager.navigateToUrl(url, {
+        waitUntil: options?.waitUntil || 'networkidle',
+        timeout: options?.timeout || 30000
+      });
+
+      logger.debug(`Navigation completed for page scan`, { scanId, url });
+
+      // Test all forms on this page
+      const forms = await this.formTestingEngine.testAllFormsOnPage(
+        pageManager,
+        url,
+        options
+      );
+
+      // Collect additional data in parallel
+      const [
+        screenshot,
+        metrics,
+        accessibility,
+        brokenLinks
+      ] = await Promise.allSettled([
+        this.captureScreenshot(pageManager, options),
+        this.collectPerformanceMetrics(pageManager),
+        this.checkAccessibility(pageManager),
+        this.findBrokenLinks(pageManager)
+      ]);
+
+      // Build page result
+      const pageResult: PageScanResult = {
+        url,
+        success: true,
+        timestamp: Date.now(),
+        duration: Date.now() - startTime,
+        forms,
+        screenshot: screenshot.status === 'fulfilled' ? screenshot.value : undefined,
+        metrics: metrics.status === 'fulfilled' ? metrics.value : undefined,
+        accessibility: accessibility.status === 'fulfilled' ? accessibility.value : undefined,
+        brokenLinks: brokenLinks.status === 'fulfilled' ? brokenLinks.value : undefined,
+        errors: this.collectErrors([screenshot, metrics, accessibility, brokenLinks])
+      };
+
+      return pageResult;
+
+    } catch (error) {
+      logger.error(`Failed to scan page for forms`, { url, error });
+
+      return {
+        url,
+        success: false,
+        timestamp: Date.now(),
+        duration: Date.now() - startTime,
+        forms: [],
+        errors: [error instanceof Error ? error.message : 'Unknown error occurred']
+      };
+
+    } finally {
+      // Cleanup resources
+      if (pageManager) {
+        await pageManager.destroy().catch(err =>
+          logger.debug('Error destroying page manager:', err)
+        );
+      }
+
+      if (acquiredBrowser) {
+        await acquiredBrowser.release().catch(err =>
+          logger.debug('Error releasing browser:', err)
+        );
+      }
+    }
+  }
+
+  private updateEnhancedScanStats(result: MultiPageScanResult, startTime: number): void {
+    this.scanStats.totalScans++;
+
+    if (result.summary.successfulPages > 0) {
+      this.scanStats.successfulScans++;
+    } else {
+      this.scanStats.failedScans++;
+    }
+
+    // Update average duration
+    const duration = Date.now() - startTime;
+    this.scanStats.averageDuration =
+      (this.scanStats.averageDuration * (this.scanStats.totalScans - 1) + duration) /
+      this.scanStats.totalScans;
   }
 
   private handleMemoryCritical = (): void => {

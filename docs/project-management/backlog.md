@@ -378,6 +378,102 @@
 
 ---
 
+## 🔗 Epic 9: Webflow OAuth Integration (NEW)
+
+### Critical Tasks (Removes Anti-Bot Limitations)
+
+#### Task 9.1: Webflow App Registration & OAuth Setup
+- **Epic:** Webflow OAuth Integration
+- **Priority:** Critical
+- **Estimated:** 3 hours
+- **Dependencies:** None
+- **Description:** Register application in Webflow Developer Portal and setup OAuth 2.0
+- **Acceptance Criteria:**
+  - Webflow Developer account created
+  - App registered with client_id/client_secret
+  - OAuth redirect URLs configured
+  - Scopes defined (sites:read, forms:read)
+  - Test OAuth flow working
+- **Technical Notes:** Follow Webflow OAuth 2.0 documentation
+- **Business Impact:** Enables legal access to protected Webflow sites
+
+#### Task 9.2: Database Schema for Webflow Connections
+- **Epic:** Webflow OAuth Integration
+- **Priority:** Critical
+- **Estimated:** 2 hours
+- **Dependencies:** Task 9.1
+- **Description:** Extend database schema for Webflow site connections
+- **Acceptance Criteria:**
+  - `webflow_connections` table created
+  - User -> Webflow Sites relationships
+  - Access/refresh token storage with encryption
+  - Site metadata fields (name, domain, staging_url)
+  - Token refresh automation logic
+- **Technical Notes:** Use Supabase RLS for security
+- **Business Impact:** Secure storage of OAuth credentials
+
+#### Task 9.3: OAuth Frontend Integration
+- **Epic:** Webflow OAuth Integration
+- **Priority:** High
+- **Estimated:** 4 hours
+- **Dependencies:** Task 9.2
+- **Description:** Implement OAuth flow in Next.js frontend
+- **Acceptance Criteria:**
+  - "Connect Webflow Site" button in dashboard
+  - OAuth redirect handling and callback processing
+  - Connected sites list with management UI
+  - Site selection for scanning workflow
+  - Error handling for OAuth failures
+- **Technical Notes:** Use NextAuth.js or custom OAuth implementation
+- **Business Impact:** Seamless user experience for site connection
+
+#### Task 9.4: Webflow API Client Implementation
+- **Epic:** Webflow OAuth Integration
+- **Priority:** High
+- **Estimated:** 3 hours
+- **Dependencies:** Task 9.3
+- **Description:** TypeScript client for Webflow REST API
+- **Acceptance Criteria:**
+  - Sites, pages, forms data fetching
+  - Rate limiting and retry logic
+  - Error handling for API failures
+  - Token refresh automation
+  - TypeScript types for API responses
+- **Technical Notes:** Use official Webflow API documentation
+- **Business Impact:** Reliable data access without scraping
+
+#### Task 9.5: Enhanced Scanner with API Integration
+- **Epic:** Webflow OAuth Integration
+- **Priority:** High
+- **Estimated:** 3 hours
+- **Dependencies:** Task 9.4
+- **Description:** Integrate API data with existing scanning engine
+- **Acceptance Criteria:**
+  - Use Webflow API for page discovery (no more link crawling)
+  - Get form structure directly from API
+  - Combine API data with Playwright UI testing
+  - Support for staging/production environments
+  - Fallback to scraping for non-Webflow sites
+- **Technical Notes:** Extend existing QAScanningEngine
+- **Business Impact:** 10x faster scanning, 99%+ success rate
+
+### Future Enhancement Tasks
+
+#### Task 9.6: Webflow CMS Integration
+- **Epic:** Webflow OAuth Integration
+- **Priority:** Medium
+- **Estimated:** 4 hours
+- **Dependencies:** Task 9.5
+- **Description:** Access CMS data for comprehensive testing
+- **Acceptance Criteria:**
+  - CMS collections data fetching
+  - Dynamic page testing with CMS content
+  - Form submissions with CMS data
+  - Content validation rules
+- **Business Impact:** Full-stack testing capabilities
+
+---
+
 ## 📈 Epic 7: Performance & Scaling
 
 ### Future Sprint Tasks
@@ -444,12 +540,19 @@
 - **Epic 6 (Webflow Widget):** 3 tasks, 9 hours
 - **Epic 7 (Performance):** 2 tasks, 7 hours
 - **Epic 8 (Deployment):** 2 tasks, 10 hours
+- **Epic 9 (Webflow OAuth):** 6 tasks, 19 hours
 
 ### Priority Distribution
-- **Critical:** 8 tasks
-- **High:** 12 tasks
-- **Medium:** 15 tasks
+- **Critical:** 10 tasks (+2 from Epic 9)
+- **High:** 15 tasks (+3 from Epic 9)
+- **Medium:** 16 tasks (+1 from Epic 9)
 - **Low:** 7 tasks
+
+### Business Impact Priority
+- **🔥 Epic 9 (Webflow OAuth):** CRITICAL - Removes main blocker for Webflow sites
+- **🚀 Epic 6 (Webflow Widget):** HIGH - Revenue generation
+- **⚙️ Epic 2 (Backend Core):** HIGH - Foundation
+- **🤖 Epic 3 (AI Pipeline):** MEDIUM - Core functionality
 
 ---
 

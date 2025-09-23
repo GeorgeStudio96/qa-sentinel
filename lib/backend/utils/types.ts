@@ -179,6 +179,117 @@ export interface BrokenLinksResult {
 }
 
 /**
+ * Form Analysis Types
+ */
+
+export interface FormField {
+  name: string;
+  type: string;
+  required: boolean;
+  label: string;
+  placeholder: string;
+  options?: string[];
+}
+
+export interface FormSubmitButton {
+  text: string;
+  type: string;
+}
+
+export interface FormInfo {
+  id: string;
+  action: string;
+  method: string;
+  fields: FormField[];
+  submitButtons: FormSubmitButton[];
+}
+
+export interface FormValidation {
+  field: string;
+  validationType: string;
+  isValid: boolean;
+  message: string;
+}
+
+export interface FormAccessibilityIssue {
+  field: string;
+  issue: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface FormFieldAnalysis {
+  validation: FormValidation[];
+  accessibility: FormAccessibilityIssue[];
+}
+
+export interface FormSubmissionResult {
+  success: boolean;
+  responseStatus: number;
+  responseUrl: string;
+  errors: string[];
+  warnings: string[];
+  submissionTime: number;
+}
+
+export interface FormTestResult {
+  form: FormInfo;
+  fieldAnalysis: FormFieldAnalysis;
+  submissionResult: FormSubmissionResult;
+}
+
+/**
+ * Multi-Page Scanning Types
+ */
+
+export interface InternalLink {
+  url: string;
+  text: string;
+  isInternal: boolean;
+}
+
+export interface PageScanResult {
+  url: string;
+  success: boolean;
+  timestamp: number;
+  duration: number;
+  forms: FormTestResult[];
+  screenshot?: Buffer;
+  metrics?: PerformanceMetrics;
+  accessibility?: AccessibilityResult;
+  brokenLinks?: BrokenLinksResult[];
+  errors?: string[];
+}
+
+export interface MultiPageScanResult {
+  mainUrl: string;
+  pages: PageScanResult[];
+  summary: {
+    totalPages: number;
+    successfulPages: number;
+    totalForms: number;
+    formsWithIssues: number;
+    totalDuration: number;
+  };
+  timestamp: number;
+}
+
+/**
+ * Enhanced Scan Options for Form Testing
+ */
+
+export interface FormScanOptions extends ScanOptions {
+  maxPages?: number;
+  testFormSubmissions?: boolean;
+  formTestData?: Record<string, Record<string, string>>; // formId -> fieldName -> value
+  skipFormSubmissionFor?: string[]; // form IDs to skip submission testing
+}
+
+export interface EnhancedScanRequest {
+  url: string;
+  options?: FormScanOptions;
+}
+
+/**
  * Error Types
  */
 
