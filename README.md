@@ -1,36 +1,135 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# QA Sentinel
 
-## Getting Started
+Автономный AI QA-инженер для Webflow/Next.js сайтов. Сканирует веб-сайты, находит реальные баги и создает профессиональные баг-репорты.
 
-First, run the development server:
+## Возможности
 
+- 🔍 Автоматическое сканирование веб-сайтов
+- 🖼️ Обнаружение сломанных изображений
+- 📱 Проверка на разных устройствах (desktop, tablet, mobile)
+- 📊 Простой dashboard для управления
+- 📸 Скриншоты проблем
+- 💾 Хранение всех данных в Supabase
+
+## Технический стек
+
+- **Frontend**: Next.js 15, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes, Vercel Functions
+- **База данных**: Supabase (PostgreSQL)
+- **Хранилище**: Supabase Storage
+- **Тестирование**: Playwright
+- **Хостинг**: Vercel
+
+## Быстрый старт
+
+### Требования
+
+- Node.js 20+
+- npm или pnpm
+
+### Установка
+
+1. Клонируйте проект:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd qa-sentinel
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Установите зависимости:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Настройте переменные окружения:
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Заполните `.env.local` своими значениями:
+- Создайте проект в [Supabase Dashboard](https://app.supabase.com)
+- Скопируйте URL и API ключи
 
-## Learn More
+4. Создайте схему БД в Supabase:
+- Перейдите в SQL Editor в Supabase Dashboard
+- Выполните SQL из `supabase/migrations/001_initial_schema.sql`
 
-To learn more about Next.js, take a look at the following resources:
+5. Запустите проект:
+```bash
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Откройте [http://localhost:3000](http://localhost:3000) в браузере.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Использование
 
-## Deploy on Vercel
+1. **Добавьте сайт**: Введите название и URL сайта в форме
+2. **Запустите сканирование**: Нажмите "Start Scan" рядом с сайтом
+3. **Просмотрите результаты**: Увидите статус сканирования и количество найденных проблем
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Архитектура проекта
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+qa-sentinel/
+├── app/                      # Next.js App Router
+│   ├── dashboard/           # Dashboard страницы
+│   └── api/                 # API routes
+├── lib/                     # Утилиты
+│   └── supabase/           # Supabase клиенты
+├── packages/               # Монорепо пакеты (будущее)
+│   ├── core/               # Основная логика
+│   ├── integrations/       # Внешние сервисы
+│   └── shared/             # Общий код
+├── supabase/               # Supabase конфигурация
+│   └── migrations/         # SQL миграции
+└── types/                  # TypeScript типы
+```
+
+## Деплой
+
+### Vercel
+
+1. Подключите репозиторий к Vercel
+2. Добавьте переменные окружения в Vercel Dashboard
+3. Деплойте проект
+
+### Переменные окружения для продакшна
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+```
+
+## Roadmap
+
+### Неделя 1 ✅
+- [x] Базовая структура проекта
+- [x] Supabase интеграция
+- [x] Dashboard с добавлением сайтов
+- [x] API для сканирования
+- [x] Обнаружение сломанных изображений
+
+### Неделя 2 (в планах)
+- [ ] Visual regression тестирование
+- [ ] Проверка форм
+- [ ] Slack интеграция
+- [ ] Автоматическое сканирование (Cron Jobs)
+
+### Неделя 3 (в планах)
+- [ ] Webflow OAuth интеграция
+- [ ] Performance мониторинг (Lighthouse)
+- [ ] ClickUp интеграция
+- [ ] CI/CD с GitHub Actions
+
+## Вклад в проект
+
+1. Форкните репозиторий
+2. Создайте ветку для фичи (`git checkout -b feature/amazing-feature`)
+3. Закоммитьте изменения (`git commit -m 'Add amazing feature'`)
+4. Запушьте ветку (`git push origin feature/amazing-feature`)
+5. Откройте Pull Request
+
+## Лицензия
+
+MIT
