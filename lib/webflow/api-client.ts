@@ -1,7 +1,9 @@
 /**
- * Webflow API Client for v2.0.0
- * Handles authenticated requests to Webflow API
+ * Webflow API Client using official Webflow SDK
+ * Handles authenticated requests to Webflow API v2.0.0
  */
+
+import { WebflowClient } from 'webflow-api';
 
 export interface WebflowSite {
   id: string;
@@ -48,29 +50,27 @@ export interface WebflowForm {
   id: string;
   siteId: string;
   name: string;
-  pageId: string;
-  workflowId?: string;
-  createdOn: string;
+  pageId?: string;
+  workspaceId: string;
   fields: WebflowFormField[];
 }
 
 export interface WebflowFormField {
   id: string;
-  name: string;
-  type: string;
+  displayName: string;
   slug: string;
-  required: boolean;
-  editable: boolean;
+  type: 'PlainText' | 'Email' | 'Phone' | 'Number' | 'TextArea' | 'Checkbox' | 'Radio' | 'Select' | 'MultiSelect' | 'FileUpload' | 'Date' | 'DateTime';
+  isRequired: boolean;
+  placeholder?: string;
+  helpText?: string;
+  options?: string[];
 }
 
 export interface WebflowCollection {
   id: string;
   displayName: string;
-  singularName: string;
   slug: string;
-  siteId: string;
-  lastUpdated: string;
-  createdOn: string;
+  singularName: string;
   fields: WebflowCollectionField[];
 }
 
@@ -79,197 +79,240 @@ export interface WebflowCollectionField {
   displayName: string;
   slug: string;
   type: string;
-  required: boolean;
+  isRequired: boolean;
   editable: boolean;
-  isMultiReference?: boolean;
 }
 
+/**
+ * Enhanced Webflow API Client using official SDK
+ */
 export class WebflowApiClient {
-  private accessToken: string;
-  private baseUrl = 'https://api.webflow.com/v2';
+  private webflow: WebflowClient;
 
   constructor(accessToken: string) {
-    this.accessToken = accessToken;
-  }
-
-  /**
-   * Make authenticated request to Webflow API
-   */
-  private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'accept': 'application/json',
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+    this.webflow = new WebflowClient({
+      accessToken: accessToken
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Webflow API error (${response.status}): ${error}`);
-    }
-
-    return response.json();
   }
 
   /**
    * Get all sites accessible to the user
    */
   async getSites(): Promise<WebflowSite[]> {
-    const response = await this.makeRequest<{ sites: WebflowSite[] }>('/sites');
-    return response.sites;
+    try {
+      const response = await this.webflow.sites.list();
+      return (response.sites || []).map((site: any) => ({
+        id: site.id,
+        displayName: site.displayName,
+        shortName: site.shortName,
+        domain: site.defaultDomain || site.domain,
+        workspaceId: site.workspaceId,
+        createdOn: site.createdOn,
+        lastUpdated: site.lastUpdated,
+        publishedOn: site.lastPublished,
+        customDomains: site.customDomains || [],
+        previewUrl: site.previewUrl || `https://${site.shortName}.webflow.io`,
+        timezone: site.timeZone || 'UTC',
+        locales: {
+          primary: site.locales?.primary?.id || 'en',
+          secondary: site.locales?.secondary?.map((l: any) => l.id) || []
+        }
+      }));
+    } catch (error) {
+      throw new Error(`Failed to fetch sites: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Get specific site by ID
    */
   async getSite(siteId: string): Promise<WebflowSite> {
-    return this.makeRequest<WebflowSite>(`/sites/${siteId}`);
+    try {
+      const site: any = await this.webflow.sites.get(siteId);
+      return {
+        id: site.id,
+        displayName: site.displayName,
+        shortName: site.shortName,
+        domain: site.defaultDomain || site.domain,
+        workspaceId: site.workspaceId,
+        createdOn: site.createdOn,
+        lastUpdated: site.lastUpdated,
+        publishedOn: site.lastPublished,
+        customDomains: site.customDomains || [],
+        previewUrl: site.previewUrl || `https://${site.shortName}.webflow.io`,
+        timezone: site.timeZone || 'UTC',
+        locales: {
+          primary: site.locales?.primary?.id || 'en',
+          secondary: site.locales?.secondary?.map((l: any) => l.id) || []
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Get all pages for a site
    */
   async getPages(siteId: string): Promise<WebflowPage[]> {
-    const response = await this.makeRequest<{ pages: WebflowPage[] }>(`/sites/${siteId}/pages`);
-    return response.pages;
+    try {
+      const response = await this.webflow.pages.list(siteId);
+      return (response.pages || []).map((page: any) => ({
+        id: page.id,
+        siteId: page.siteId,
+        title: page.title,
+        slug: page.slug,
+        parentId: page.parentId || undefined,
+        localeId: page.localeId,
+        createdOn: page.createdOn,
+        lastUpdated: page.lastUpdated,
+        lastPublished: page.lastPublished,
+        canBranch: page.canBranch,
+        seo: {
+          title: page.seo?.title,
+          description: page.seo?.description
+        },
+        openGraph: {
+          title: page.openGraph?.title,
+          titleCopied: page.openGraph?.titleCopied,
+          description: page.openGraph?.description,
+          descriptionCopied: page.openGraph?.descriptionCopied
+        }
+      }));
+    } catch (error) {
+      throw new Error(`Failed to fetch pages for site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
-   * Get specific page by ID
+   * Get specific page by ID (finds it in the pages list)
    */
-  async getPage(pageId: string): Promise<WebflowPage> {
-    return this.makeRequest<WebflowPage>(`/pages/${pageId}`);
+  async getPage(pageId: string, siteId?: string): Promise<WebflowPage | null> {
+    try {
+      if (!siteId) {
+        // If no siteId provided, we need to find the site first
+        const sites = await this.getSites();
+
+        for (const site of sites) {
+          const pages = await this.getPages(site.id);
+          const page = pages.find(p => p.id === pageId);
+          if (page) {
+            return page;
+          }
+        }
+        return null;
+      } else {
+        const pages = await this.getPages(siteId);
+        return pages.find(p => p.id === pageId) || null;
+      }
+    } catch (error) {
+      throw new Error(`Failed to fetch page ${pageId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Get all forms for a site
    */
   async getForms(siteId: string): Promise<WebflowForm[]> {
-    const response = await this.makeRequest<{ forms: WebflowForm[] }>(`/sites/${siteId}/forms`);
-    return response.forms;
+    try {
+      const response = await this.webflow.forms.list(siteId);
+      return (response.forms || []).map((form: any) => ({
+        id: form.id,
+        siteId: form.siteId,
+        name: form.name,
+        pageId: form.pageId || undefined,
+        workspaceId: form.workspaceId,
+        fields: form.fields?.map((field: any) => ({
+          id: field.id,
+          displayName: field.displayName,
+          slug: field.slug,
+          type: field.type as WebflowFormField['type'],
+          isRequired: field.isRequired,
+          placeholder: field.placeholder,
+          helpText: field.helpText,
+          options: field.options
+        })) || []
+      }));
+    } catch (error) {
+      throw new Error(`Failed to fetch forms for site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Get specific form by ID
    */
   async getForm(formId: string): Promise<WebflowForm> {
-    return this.makeRequest<WebflowForm>(`/forms/${formId}`);
+    try {
+      const form: any = await this.webflow.forms.get(formId);
+      return {
+        id: form.id,
+        siteId: form.siteId,
+        name: form.name,
+        pageId: form.pageId || undefined,
+        workspaceId: form.workspaceId,
+        fields: form.fields?.map((field: any) => ({
+          id: field.id,
+          displayName: field.displayName,
+          slug: field.slug,
+          type: field.type as WebflowFormField['type'],
+          isRequired: field.isRequired,
+          placeholder: field.placeholder,
+          helpText: field.helpText,
+          options: field.options
+        })) || []
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch form ${formId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   /**
    * Get all collections for a site
    */
   async getCollections(siteId: string): Promise<WebflowCollection[]> {
-    const response = await this.makeRequest<{ collections: WebflowCollection[] }>(`/sites/${siteId}/collections`);
-    return response.collections;
-  }
-
-  /**
-   * Get specific collection by ID
-   */
-  async getCollection(collectionId: string): Promise<WebflowCollection> {
-    return this.makeRequest<WebflowCollection>(`/collections/${collectionId}`);
-  }
-
-  /**
-   * Get items from a collection with pagination
-   */
-  async getCollectionItems(collectionId: string, offset = 0, limit = 100): Promise<Record<string, unknown>[]> {
-    const response = await this.makeRequest<{ items: Record<string, unknown>[] }>(
-      `/collections/${collectionId}/items?offset=${offset}&limit=${limit}`
-    );
-    return response.items;
-  }
-
-  /**
-   * Get current user information
-   */
-  async getUser(): Promise<Record<string, unknown>> {
-    return this.makeRequest<Record<string, unknown>>('/user');
-  }
-
-  /**
-   * Test API connection and validate token
-   */
-  async testConnection(): Promise<boolean> {
     try {
-      await this.getUser();
-      return true;
+      const response = await this.webflow.collections.list(siteId);
+      return (response.collections || []).map((collection: any) => ({
+        id: collection.id,
+        displayName: collection.displayName,
+        slug: collection.slug,
+        singularName: collection.singularName,
+        fields: collection.fields?.map((field: any) => ({
+          id: field.id,
+          displayName: field.displayName,
+          slug: field.slug,
+          type: field.type,
+          isRequired: field.isRequired || false,
+          editable: field.editable || false
+        })) || []
+      }));
     } catch (error) {
-      console.error('Webflow API connection test failed:', error);
-      return false;
+      throw new Error(`Failed to fetch collections for site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   /**
-   * Get site domain URLs for scanning
+   * Test API connection and permissions
    */
-  async getSiteDomains(siteId: string): Promise<string[]> {
-    const site = await this.getSite(siteId);
-    const domains = [site.domain, ...site.customDomains];
-
-    // Add preview URL for staging testing
-    if (site.previewUrl) {
-      domains.push(site.previewUrl);
-    }
-
-    return domains.filter(Boolean);
-  }
-
-  /**
-   * Get all page URLs for a site for comprehensive scanning
-   */
-  async getSitePageUrls(siteId: string): Promise<string[]> {
-    const [site, pages] = await Promise.all([
-      this.getSite(siteId),
-      this.getPages(siteId)
-    ]);
-
-    const baseUrl = `https://${site.domain}`;
-
-    return pages.map(page => {
-      // Handle root page
-      if (page.slug === 'index' || page.slug === '') {
-        return baseUrl;
-      }
-
-      // Handle nested pages
-      return `${baseUrl}/${page.slug}`;
-    });
-  }
-
-  /**
-   * Get form testing data for automated form submissions
-   */
-  async getFormTestingData(siteId: string): Promise<Array<{
-    formId: string;
-    name: string;
-    pageUrl: string;
-    fields: WebflowFormField[];
-  }>> {
-    const [forms, pages] = await Promise.all([
-      this.getForms(siteId),
-      this.getPages(siteId)
-    ]);
-
-    const site = await this.getSite(siteId);
-    const baseUrl = `https://${site.domain}`;
-
-    return forms.map(form => {
-      const page = pages.find(p => p.id === form.pageId);
-      const pageUrl = page ? `${baseUrl}/${page.slug}` : baseUrl;
+  async testConnection(): Promise<{
+    success: boolean;
+    user?: any;
+    sitesCount?: number;
+    error?: string
+  }> {
+    try {
+      // Test by getting user info and site count
+      const sites = await this.getSites();
 
       return {
-        formId: form.id,
-        name: form.name,
-        pageUrl,
-        fields: form.fields,
+        success: true,
+        sitesCount: sites.length
       };
-    });
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 }

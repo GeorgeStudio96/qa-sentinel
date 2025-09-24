@@ -13,7 +13,9 @@
     "api:dev": "tsx lib/api/server.ts",
     "api:test": "tsx lib/api/test-server.ts",
     "api:build": "tsc lib/api/server.ts --outDir dist",
-    "api:start": "node dist/lib/api/server.js"
+    "api:start": "node dist/lib/api/server.js",
+    "test:webflow": "tsx scripts/test-webflow-integration.ts",
+    "test:webflow:old": "tsx scripts/test-webflow-api.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
@@ -27,7 +29,8 @@
     "pixelmatch": "^5.3.0",
     "playwright": "^1.47.0",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "webflow-api": "^3.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -35,6 +38,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "dotenv-cli": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.3",

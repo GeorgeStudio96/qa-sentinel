@@ -9,6 +9,7 @@
 - Интеграция с Slack, ClickUp для баг-репортов
 - Встроенный dashboard в Webflow Cloud для простых пользователей
 - Масштабирование до тысяч сайтов одновременно
+— Always use ES6 (import instead of require)
 
 ## 📋 Technical Specification
 
@@ -120,8 +121,8 @@ pm2 restart qa-sentinel
 
 ## 🔥 Current Development Phase
 
-**Phase:** Foundation + Documentation ✅ **COMPLETED**
-**Focus:** Backend architecture и task management setup
+**Phase:** Site Token Integration ✅ **COMPLETED**
+**Focus:** Простой UX с Site Token подходом на Fastify backend
 
 ### ✅ Completed Foundation Tasks
 1. ✅ Complete project management structure
@@ -137,12 +138,58 @@ pm2 restart qa-sentinel
 5. ✅ **TypeScript Integration** - All compilation errors fixed
 6. ✅ **Test Script** - Working demonstration ready
 
-### 🔥 CRITICAL Next Phase: Webflow OAuth Integration
-1. 🎯 **Priority 1:** Webflow App Registration & OAuth Setup (Epic 9.1)
-2. 🎯 **Priority 2:** Database Schema for Webflow Connections (Epic 9.2)
-3. 🎯 **Priority 3:** OAuth Frontend Integration (Epic 9.3)
+### ✅ Completed Webflow Site Token Integration
+1. ✅ **Site Token Research** - Исследована документация Webflow API
+2. ✅ **OAuth Cleanup** - Удалена сложная OAuth инфраструктура из Next.js
+3. ✅ **Fastify Integration** - Все Webflow API перенесено на Fastify backend
+4. ✅ **Site Token Endpoints** - 4 новых API endpoint для Site Token workflow
+5. ✅ **SiteAnalyzer Component** - Новый UI компонент с простым токен вводом
+6. ✅ **Testing Infrastructure** - Обновлены тесты под новую архитектуру
 
-**BUSINESS IMPACT:** Removes main technical blocker - enables legal access to all Webflow sites without anti-bot limitations. Unlocks enterprise scalability (1000+ sites vs current 10-50).
+**BUSINESS IMPACT:** Максимально упрощен UX - пользователь просто вводит Site Token, получает прямой доступ к Webflow API без сложной авторизации.
+
+## 🚀 Webflow Site Token Integration
+
+### Новая архитектура
+- **Frontend (Next.js):** Только UI и SiteAnalyzer компонент
+- **Backend (Fastify):** Все Webflow API операции и QA сканирование
+- **Integration:** Site Token вместо OAuth - максимальная простота
+
+### API Endpoints (Fastify)
+```
+GET  /api/webflow/health                    - Health check
+POST /api/webflow/validate-token           - Проверка Site Token
+POST /api/webflow/analyze-site             - Анализ сайта через Webflow API
+GET  /api/webflow/site/:siteId/status      - Статус анализа сайта
+```
+
+### Пользовательский Flow
+1. **Пользователь** открывает QA Sentinel dashboard
+2. **Вводит Site Token** (получается за ~30 секунд из Webflow)
+3. **Система валидирует** токен и показывает информацию о сайте
+4. **Запускается анализ** - автоматическое сканирование всех страниц
+5. **Результаты** показываются в реальном времени
+
+### Как получить Site Token
+```
+1. Webflow Dashboard → Выбрать сайт → Settings ⚙️
+2. Apps & integrations → API access
+3. Generate API token → Name: "QA Sentinel"
+4. Permissions: Read access (sites, forms, CMS)
+5. Copy token → Paste в QA Sentinel
+```
+
+### Команды для запуска
+```bash
+# 1. Запуск Fastify backend
+npm run api:dev              # http://localhost:3001
+
+# 2. Запуск Next.js frontend
+npm run dev                  # http://localhost:3000
+
+# 3. Тестирование интеграции
+npm run test:webflow         # Проверка всех endpoints
+```
 
 ### Task Management Workflow
 **After each task completion:**

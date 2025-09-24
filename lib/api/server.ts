@@ -5,6 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import { QAScanningEngine } from '../backend';
 import { createLogger } from '../backend/utils/logger';
 import { db } from '../database/supabase-client';
+import { webflowRoutes } from './webflow/routes';
 
 const logger = createLogger('api-server');
 
@@ -48,6 +49,9 @@ export async function createServer() {
       criticalThreshold: parseInt(process.env.MEMORY_CRITICAL_THRESHOLD || '600') * 1024 * 1024
     }
   });
+
+  // Register Webflow integration routes
+  await server.register(webflowRoutes);
 
   // Health check endpoint
   server.get('/api/health', async () => {
@@ -381,7 +385,11 @@ export async function createServer() {
         'GET /api/stats',
         'POST /api/scan/forms',
         'POST /api/scan',
-        'POST /api/scan/batch'
+        'POST /api/scan/batch',
+        'GET /api/webflow/health',
+        'POST /api/webflow/validate-token',
+        'POST /api/webflow/analyze-site',
+        'GET /api/webflow/site/:siteId/status'
       ]
     });
   });

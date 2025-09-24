@@ -95,11 +95,34 @@ export function WebflowConnection({ onConnectionChange }: WebflowConnectionProps
 
     try {
       setLoading(true)
-      // This will be implemented in Task 9.4 - API Client Implementation
-      // For now, just reload the connection
-      await loadConnection()
+
+      // Call the sync API endpoint
+      const response = await fetch('/api/webflow/sync-sites', {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to sync sites')
+      }
+
+      const syncResult = await response.json()
+
+      if (syncResult.success) {
+        // Show success message
+        alert(`Successfully synced ${syncResult.syncedSites} of ${syncResult.totalSites} sites`)
+
+        // Reload the connection to show updated sites
+        await loadConnection()
+
+        // Trigger parent component update
+        onConnectionChange?.()
+      } else {
+        throw new Error('Sync failed')
+      }
     } catch (error) {
       console.error('Error syncing sites:', error)
+      alert(`Failed to sync sites: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setLoading(false)
     }

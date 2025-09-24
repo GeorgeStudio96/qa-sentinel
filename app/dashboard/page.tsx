@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { AddSiteForm } from './components/AddSiteForm'
 import { SitesList } from './components/SitesList'
-import { WebflowConnection } from './components/WebflowConnection'
+import { SiteAnalyzer } from './components/SiteAnalyzer'
 import { ConnectionNotification } from './components/ConnectionNotification'
 import { LogoutButton } from './components/LogoutButton'
 
@@ -50,8 +50,7 @@ export default async function Dashboard() {
 
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-8">
-            {/* Webflow OAuth temporarily hidden - will be enabled later */}
-            {/* <WebflowConnection /> */}
+            <SiteAnalyzer />
             <AddSiteForm />
           </div>
 
