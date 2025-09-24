@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { AddSiteForm } from './components/AddSiteForm'
 import { SitesList } from './components/SitesList'
 import { WebflowConnection } from './components/WebflowConnection'
@@ -7,6 +8,12 @@ import { LogoutButton } from './components/LogoutButton'
 
 export default async function Dashboard() {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
 
   const { data: sites, error } = await supabase
     .from('sites')
@@ -20,6 +27,7 @@ export default async function Dashboard() {
         findings_count
       )
     `)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -32,16 +40,18 @@ export default async function Dashboard() {
         <div className="mb-8 flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">QA Sentinel Dashboard</h1>
-            <p className="text-gray-600">Monitor your websites for quality issues</p>
+            <p className="text-gray-600">Welcome back, {user.email}</p>
           </div>
           <LogoutButton />
         </div>
 
-        <ConnectionNotification />
+        {/* Connection notification temporarily hidden - OAuth not active */}
+        {/* <ConnectionNotification /> */}
 
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-8">
-            <WebflowConnection />
+            {/* Webflow OAuth temporarily hidden - will be enabled later */}
+            {/* <WebflowConnection /> */}
             <AddSiteForm />
           </div>
 

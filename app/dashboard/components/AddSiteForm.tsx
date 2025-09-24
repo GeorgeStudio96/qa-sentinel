@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/lib/context/AuthContext'
 import { useRouter } from 'next/navigation'
 
 export function AddSiteForm() {
@@ -10,17 +11,18 @@ export function AddSiteForm() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const { user } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!url || !name) return
+    if (!url || !name || !user) return
 
     setLoading(true)
 
     try {
       const { error } = await supabase
         .from('sites')
-        .insert([{ url, name }])
+        .insert([{ url, name, user_id: user.id }])
 
       if (error) throw error
 
