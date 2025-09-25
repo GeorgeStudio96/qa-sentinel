@@ -1,823 +1,298 @@
 import { Browser, Page } from 'playwright';
-import {
-  PageManagerConfig,
-  PageStats
-} from '../utils/types';
 import { createLogger } from '../utils/logger';
+import { runAllCheckers, CheckerContext, CheckerResult } from '../checkers';
 
 const logger = createLogger('page-manager');
 
+/**
+ * PageManager - Lightweight page coordinator
+ *
+ * This is a streamlined version that focuses only on:
+ * - Page lifecycle management (create, configure, destroy)
+ * - Coordinating specialized checkers
+ * - Memory management
+ *
+ * All QA checking logic has been moved to specialized checker modules.
+ * This keeps PageManager focused on browser/page management only.
+ */
 export class PageManager {
   private browser: Browser;
-  private options: PageManagerConfig;
-  private activePage: Page | null = null;
-  private pageStats: PageStats;
+  private currentPage: Page | null = null;
+  private pageCount = 0;
+  private readonly config = {
+    maxPages: 10,
+    pageTimeout: 30000,
+    userAgent: 'Mozilla/5.0 (compatible; QA-Sentinel/1.0)'
+  };
 
-  constructor(browser: Browser, options: Partial<PageManagerConfig> = {}) {
+  constructor(browser: Browser) {
     this.browser = browser;
-    this.options = {
-      maxPagesPerBrowser: options.maxPagesPerBrowser || 5,
-      pageTimeout: options.pageTimeout || 30000,
-      maxPageAge: options.maxPageAge || 5 * 60 * 1000, // 5 minutes
-      ...options
-    };
-
-    this.pageStats = {
-      created: 0,
-      destroyed: 0,
-      errors: 0
-    };
+    logger.info('PageManager initialized');
   }
 
+  /**
+   * Get or create a page for analysis
+   * Handles page lifecycle and configuration
+   */
   async getPage(): Promise<Page> {
-    if (this.activePage && !this.activePage.isClosed()) {
-      await this.resetPage(this.activePage);
-      return this.activePage;
+    if (this.currentPage && !this.currentPage.isClosed()) {
+      return this.currentPage;
     }
 
-    this.activePage = await this.createPage();
-    return this.activePage;
+    return await this.createPage();
   }
 
+  /**
+   * Create and configure a new page
+   * Sets up viewport, user agent, and error handling
+   */
   async createPage(): Promise<Page> {
     try {
-      const page = await this.browser.newPage();
-      this.pageStats.created++;
+      if (this.pageCount >= this.config.maxPages) {
+        await this.destroyCurrentPage();
+      }
 
-      // Configure page
+      const page = await this.browser.newPage({
+        viewport: { width: 1280, height: 720 },
+        userAgent: this.config.userAgent
+      });
+
       await this.configurePage(page);
 
-      // Setup page handlers
-      this.setupPageHandlers(page);
+      this.currentPage = page;
+      this.pageCount++;
 
+      logger.info(`Created new page (total: ${this.pageCount})`);
       return page;
 
     } catch (error) {
-      this.pageStats.errors++;
-      logger.error('Failed to create page:', error instanceof Error ? error : new Error('Unknown error'));
+      logger.error('Failed to create page:', error);
       throw error;
     }
   }
 
+  /**
+   * Configure page settings and error handling
+   * Sets up timeouts and basic page behavior
+   */
   private async configurePage(page: Page): Promise<void> {
-    try {
-      // Set viewport
-      await page.setViewportSize({ width: 1920, height: 1080 });
+    // Set default timeout
+    page.setDefaultTimeout(this.config.pageTimeout);
 
-      // Set user agent
-      await page.setExtraHTTPHeaders({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 QASentinel/1.0'
-      });
-
-      // Block unnecessary resources
-      await page.route('**/*', (route) => {
-        const request = route.request();
-        const resourceType = request.resourceType();
-        const url = request.url();
-
-        // Block ads, analytics, and other non-essential resources
-        const blockedTypes = ['font', 'media'];
-        const blockedDomains = [
-          'google-analytics.com',
-          'googletagmanager.com',
-          'facebook.com',
-          'doubleclick.net',
-          'googlesyndication.com',
-          'googleadservices.com',
-          'amazon-adsystem.com'
-        ];
-
-        const shouldBlock = blockedTypes.includes(resourceType) ||
-                           blockedDomains.some(domain => url.includes(domain));
-
-        if (shouldBlock) {
-          route.abort();
-        } else {
-          route.continue();
-        }
-      });
-
-      // Set timeouts
-      page.setDefaultTimeout(this.options.pageTimeout);
-      page.setDefaultNavigationTimeout(this.options.pageTimeout);
-
-      // Intercept console messages for debugging
-      page.on('console', (msg) => {
-        if (msg.type() === 'error') {
-          logger.debug('Page console error:', { message: msg.text() });
-        }
-      });
-
-    } catch (error) {
-      logger.error('Failed to configure page:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  private setupPageHandlers(page: Page): void {
-    page.on('crash', () => {
-      logger.error('Page crashed');
-      this.pageStats.errors++;
-    });
-
-    page.on('pageerror', (error: Error) => {
-      logger.error('Page error:', error);
-      this.pageStats.errors++;
-    });
-
-    page.on('pageerror', (error: Error) => {
-      logger.debug('Page JavaScript error:', { message: error.message });
-    });
-
-    // Handle page response errors
-    page.on('response', (response) => {
-      if (response.status() >= 400) {
-        logger.debug('HTTP error response:', {
-          url: response.url(),
-          status: response.status(),
-          statusText: response.statusText()
-        });
+    // Handle console messages and errors
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        logger.warn(`Page console error: ${msg.text()}`);
       }
     });
 
-    // Handle request failures
-    page.on('requestfailed', (request) => {
-      logger.debug('Request failed:', {
-        url: request.url(),
-        failure: request.failure()?.errorText,
-        method: request.method()
-      });
+    page.on('pageerror', error => {
+      logger.warn(`Page error: ${error.message}`);
+    });
+
+    // Block unnecessary resources to speed up loading
+    await page.route('**/*', (route) => {
+      const resourceType = route.request().resourceType();
+
+      // Block ads, analytics, and other non-essential resources
+      if (['font', 'media'].includes(resourceType)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
     });
   }
 
-  async resetPage(page: Page): Promise<void> {
+  /**
+   * Run comprehensive QA analysis using specialized checkers
+   * This is the main method that coordinates all QA checks
+   */
+  async runQAAnalysis(url: string, options?: {
+    includeBrokenLinks?: boolean;
+    includeSEO?: boolean;
+    includePerformance?: boolean;
+    includeAccessibility?: boolean;
+  }): Promise<{
+    results: CheckerResult[];
+    summary: {
+      totalIssues: number;
+      criticalIssues: number;
+      highIssues: number;
+      mediumIssues: number;
+      lowIssues: number;
+    };
+    overallStatus: 'success' | 'warning' | 'error';
+  }> {
+    const startTime = Date.now();
+    logger.info(`Starting QA analysis for: ${url}`);
+
     try {
-      // Navigate to blank page
-      await page.goto('about:blank', { waitUntil: 'load' });
+      const page = await this.getPage();
 
-      // Clear storage
-      await page.evaluate(() => {
-        try {
-          if (typeof window !== 'undefined') {
-            window.localStorage?.clear();
-            window.sessionStorage?.clear();
-          }
-
-          // Clear any timers/intervals
-          const highestTimeoutId = setTimeout(() => {}, 0);
-          for (let i = 0; i < Number(highestTimeoutId); i++) {
-            clearTimeout(i);
-            clearInterval(i);
-          }
-        } catch (e) {
-          // Storage might not be available in some contexts
-          console.debug('Storage cleanup failed:', e);
-        }
+      // Navigate to the URL with optimized settings
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
       });
 
-      // Clear cookies for this page's context
-      const context = page.context();
-      await context.clearCookies();
+      // Wait for critical resources to load
+      await page.waitForTimeout(2000);
 
-      // Clear any active network requests
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
-        // Ignore timeout, just continue
-      });
+      // Create checker context
+      const context: CheckerContext = {
+        page,
+        url,
+        viewport: { width: 1280, height: 720 }
+      };
+
+      // Configure which checkers to run based on options
+      const checkerConfigs = {
+        brokenLinks: options?.includeBrokenLinks !== false ? {
+          timeout: 10000,
+          checkExternalLinks: true
+        } : undefined,
+
+        seo: options?.includeSEO !== false ? {
+          checkMetaTags: true,
+          checkHeadings: true,
+          checkImages: true
+        } : undefined,
+
+        performance: options?.includePerformance !== false ? {
+          collectMetrics: true,
+          checkImageOptimization: true
+        } : undefined,
+
+        accessibility: options?.includeAccessibility !== false ? {
+          checkColorContrast: true,
+          checkAltText: true,
+          checkFormLabels: true
+        } : undefined
+      };
+
+      // Run all enabled checkers
+      const report = await runAllCheckers(context, checkerConfigs);
+
+      const duration = Date.now() - startTime;
+      logger.info(`QA analysis completed in ${duration}ms: ${report.totalIssues} issues found`);
+
+      return {
+        results: report.results,
+        summary: {
+          totalIssues: report.totalIssues,
+          criticalIssues: report.issuesBySeverity.critical || 0,
+          highIssues: report.issuesBySeverity.high || 0,
+          mediumIssues: report.issuesBySeverity.medium || 0,
+          lowIssues: report.issuesBySeverity.low || 0
+        },
+        overallStatus: report.overallStatus
+      };
 
     } catch (error) {
-      logger.debug('Failed to reset page:', { message: error instanceof Error ? error.message : 'Unknown error' });
-      // If reset fails, close the page and create a new one
+      logger.error('QA analysis failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reset page to clean state
+   * Useful between different analyses
+   */
+  async resetPage(): Promise<void> {
+    if (!this.currentPage || this.currentPage.isClosed()) return;
+
+    try {
+      // Clear cache and cookies
+      const context = this.currentPage.context();
+      await context.clearCookies();
+
+      // Navigate to blank page to reset state
+      await this.currentPage.goto('about:blank');
+
+      logger.info('Page reset completed');
+    } catch (error) {
+      logger.error('Failed to reset page:', error);
+      // If reset fails, create new page
       await this.destroyCurrentPage();
     }
   }
 
-  async navigateToUrl(url: string, options: {
-    waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
-    timeout?: number;
-  } = {}): Promise<void> {
-    const page = await this.getPage();
-
-    try {
-      await page.goto(url, {
-        waitUntil: options.waitUntil || 'networkidle',
-        timeout: options.timeout || this.options.pageTimeout
-      });
-    } catch (error) {
-      logger.error(`Failed to navigate to ${url}:`, error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async takeScreenshot(options: {
-    path?: string;
-    fullPage?: boolean;
-    clip?: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  } = {}): Promise<Buffer> {
-    const page = await this.getPage();
-
-    try {
-      return await page.screenshot({
-        path: options.path,
-        fullPage: options.fullPage ?? true,
-        clip: options.clip,
-        type: 'png'
-      });
-    } catch (error) {
-      logger.error('Failed to take screenshot:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async evaluateOnPage<T>(
-    pageFunction: () => Promise<T> | T,
-    ...args: unknown[]
-  ): Promise<T> {
-    const page = await this.getPage();
-
-    try {
-      return await page.evaluate(pageFunction, ...args);
-    } catch (error) {
-      logger.error('Failed to evaluate function on page:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async waitForSelector(
-    selector: string,
-    options: {
-      timeout?: number;
-      visible?: boolean;
-      hidden?: boolean;
-    } = {}
-  ): Promise<void> {
-    const page = await this.getPage();
-
-    try {
-      await page.waitForSelector(selector, {
-        timeout: options.timeout || this.options.pageTimeout,
-        state: options.visible ? 'visible' : options.hidden ? 'hidden' : 'attached'
-      });
-    } catch (error) {
-      logger.error(`Failed to wait for selector ${selector}:`, error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async getPageMetrics(): Promise<{
+  /**
+   * Get basic page metrics for monitoring
+   * Lightweight alternative to full performance analysis
+   */
+  async getBasicMetrics(): Promise<{
     url: string;
     title: string;
     loadTime: number;
-    domContentLoaded: number;
-    networkRequests: number;
-    failedRequests: number;
-  }> {
-    const page = await this.getPage();
+    domReady: number;
+  } | null> {
+    if (!this.currentPage || this.currentPage.isClosed()) return null;
 
     try {
-      const performanceMetrics = await page.evaluate(() => {
+      const metrics = await this.currentPage.evaluate(() => {
         const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-        const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-
         return {
-          loadTime: navigation.loadEventEnd - navigation.fetchStart,
-          domContentLoaded: navigation.domContentLoadedEventEnd - navigation.fetchStart,
-          networkRequests: resources.length,
-          failedRequests: resources.filter((r: PerformanceResourceTiming) =>
-            r.transferSize === 0 && r.encodedBodySize === 0
-          ).length
+          url: window.location.href,
+          title: document.title,
+          loadTime: navigation.loadEventEnd - navigation.navigationStart,
+          domReady: navigation.domContentLoadedEventEnd - navigation.navigationStart
         };
       });
 
-      return {
-        url: page.url(),
-        title: await page.title(),
-        ...performanceMetrics
-      };
+      return metrics;
     } catch (error) {
-      logger.error('Failed to get page metrics:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
+      logger.error('Failed to get basic metrics:', error);
+      return null;
     }
   }
 
-  async checkAccessibility(): Promise<{
-    violations: Array<{
-      id: string;
-      description: string;
-      impact: string;
-      nodes: number;
-    }>;
-    passes: number;
-  }> {
-    const page = await this.getPage();
+  /**
+   * Check if page is ready for analysis
+   * Verifies page state before running checkers
+   */
+  async isPageReady(): Promise<boolean> {
+    if (!this.currentPage || this.currentPage.isClosed()) return false;
 
     try {
-      // Inject axe-core for accessibility testing
-      await page.addScriptTag({
-        url: 'https://unpkg.com/axe-core@4.7.2/axe.min.js'
-      });
-
-      const results = await page.evaluate(() => {
-        return new Promise((resolve) => {
-          // @ts-expect-error - axe is loaded dynamically
-          window.axe.run().then((results: { violations: Array<{ id: string; description: string; impact: string; nodes: unknown[] }>; passes: unknown[] }) => {
-            resolve({
-              violations: results.violations.map((violation) => ({
-                id: violation.id,
-                description: violation.description,
-                impact: violation.impact,
-                nodes: violation.nodes.length
-              })),
-              passes: results.passes.length
-            });
-          });
-        });
-      });
-
-      return results as {
-        violations: Array<{
-          id: string;
-          description: string;
-          impact: string;
-          nodes: number;
-        }>;
-        passes: number;
-      };
-    } catch (error) {
-      logger.error('Failed to check accessibility:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
+      const readyState = await this.currentPage.evaluate(() => document.readyState);
+      return readyState === 'complete' || readyState === 'interactive';
+    } catch {
+      return false;
     }
   }
 
-  async findBrokenLinks(): Promise<Array<{
-    url: string;
-    status: number;
-    text: string;
-  }>> {
-    const page = await this.getPage();
-
-    try {
-      const links = await page.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        return anchors.map(anchor => ({
-          url: (anchor as HTMLAnchorElement).href,
-          text: anchor.textContent?.trim() || ''
-        }));
-      });
-
-      const brokenLinks: Array<{
-        url: string;
-        status: number;
-        text: string;
-      }> = [];
-
-      // Check each link (limit to first 20 to avoid overwhelming)
-      const linksToCheck = links.slice(0, 20);
-
-      for (const link of linksToCheck) {
-        try {
-          const response = await page.goto(link.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 10000
-          });
-
-          if (response && response.status() >= 400) {
-            brokenLinks.push({
-              url: link.url,
-              status: response.status(),
-              text: link.text
-            });
-          }
-        } catch {
-          brokenLinks.push({
-            url: link.url,
-            status: 0, // Connection failed
-            text: link.text
-          });
-        }
-      }
-
-      return brokenLinks;
-    } catch (error) {
-      logger.error('Failed to find broken links:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async findInternalLinks(): Promise<Array<{
-    url: string;
-    text: string;
-    isInternal: boolean;
-  }>> {
-    const page = await this.getPage();
-
-    try {
-      const currentDomain = new URL(page.url()).hostname;
-
-      const links = await page.evaluate((currentDomain) => {
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        return anchors.map(anchor => {
-          const href = (anchor as HTMLAnchorElement).href;
-          let isInternal = false;
-
-          try {
-            const linkUrl = new URL(href);
-            isInternal = linkUrl.hostname === currentDomain;
-          } catch {
-            isInternal = href.startsWith('/') || href.startsWith('./') || href.startsWith('../');
-          }
-
-          return {
-            url: href,
-            text: anchor.textContent?.trim() || '',
-            isInternal
-          };
-        });
-      }, currentDomain);
-
-      return links.filter(link => link.isInternal);
-    } catch (error) {
-      logger.error('Failed to find internal links:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async findForms(): Promise<Array<{
-    id: string;
-    action: string;
-    method: string;
-    fields: Array<{
-      name: string;
-      type: string;
-      required: boolean;
-      label: string;
-      placeholder: string;
-      options?: string[];
-    }>;
-    submitButtons: Array<{
-      text: string;
-      type: string;
-    }>;
-  }>> {
-    const page = await this.getPage();
-
-    try {
-      const forms = await page.evaluate(() => {
-        const formElements = Array.from(document.querySelectorAll('form'));
-
-        return formElements.map((form, index) => {
-          const formId = form.id || `form-${index}`;
-          const action = form.action || window.location.href;
-          const method = form.method.toLowerCase() || 'get';
-
-          // Find all input, select, textarea elements
-          const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
-          const fields = inputs
-            .filter(input => {
-              const type = (input as HTMLInputElement).type;
-              return !['submit', 'button', 'reset', 'image'].includes(type);
-            })
-            .map(input => {
-              const element = input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-              const label = form.querySelector(`label[for="${element.id}"]`)?.textContent?.trim() ||
-                           element.closest('label')?.textContent?.trim() || '';
-
-              let options: string[] | undefined = undefined;
-              if (element.tagName === 'SELECT') {
-                const selectElement = element as HTMLSelectElement;
-                options = Array.from(selectElement.options).map(option => option.text);
-              }
-
-              return {
-                name: element.name || element.id || '',
-                type: (element as HTMLInputElement).type || element.tagName.toLowerCase(),
-                required: element.hasAttribute('required'),
-                label: label.replace(element.value || '', '').trim(),
-                placeholder: (element as HTMLInputElement).placeholder || '',
-                options
-              };
-            });
-
-          // Find submit buttons
-          const submitButtons = Array.from(form.querySelectorAll('input[type="submit"], button[type="submit"], button:not([type])'))
-            .map(button => ({
-              text: (button as HTMLInputElement).value || button.textContent?.trim() || '',
-              type: (button as HTMLInputElement).type || 'submit'
-            }));
-
-          return {
-            id: formId,
-            action,
-            method,
-            fields,
-            submitButtons
-          };
-        });
-      });
-
-      logger.debug(`Found ${forms.length} forms on page`);
-      return forms;
-    } catch (error) {
-      logger.error('Failed to find forms:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async analyzeFormFields(formId: string): Promise<{
-    validation: Array<{
-      field: string;
-      validationType: string;
-      isValid: boolean;
-      message: string;
-    }>;
-    accessibility: Array<{
-      field: string;
-      issue: string;
-      severity: 'low' | 'medium' | 'high';
-    }>;
-  }> {
-    const page = await this.getPage();
-
-    try {
-      const analysis = await page.evaluate((formId) => {
-        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
-        if (!form) return { validation: [], accessibility: [] };
-
-        const validation: Array<{
-          field: string;
-          validationType: string;
-          isValid: boolean;
-          message: string;
-        }> = [];
-
-        const accessibility: Array<{
-          field: string;
-          issue: string;
-          severity: 'low' | 'medium' | 'high';
-        }> = [];
-
-        const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
-
-        inputs.forEach((input) => {
-          const element = input as HTMLInputElement;
-          const fieldName = element.name || element.id || element.placeholder || 'unnamed';
-
-          // Validation analysis
-          if (element.type === 'email') {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            validation.push({
-              field: fieldName,
-              validationType: 'email',
-              isValid: !element.value || emailRegex.test(element.value),
-              message: element.value && !emailRegex.test(element.value) ? 'Invalid email format' : 'Valid'
-            });
-          }
-
-          if (element.type === 'url') {
-            try {
-              new URL(element.value);
-              validation.push({
-                field: fieldName,
-                validationType: 'url',
-                isValid: true,
-                message: 'Valid URL'
-              });
-            } catch {
-              validation.push({
-                field: fieldName,
-                validationType: 'url',
-                isValid: !element.value,
-                message: element.value ? 'Invalid URL format' : 'Empty'
-              });
-            }
-          }
-
-          if (element.hasAttribute('required')) {
-            validation.push({
-              field: fieldName,
-              validationType: 'required',
-              isValid: !!element.value,
-              message: element.value ? 'Required field filled' : 'Required field is empty'
-            });
-          }
-
-          // Accessibility analysis
-          const label = form.querySelector(`label[for="${element.id}"]`) || element.closest('label');
-          if (!label && element.type !== 'hidden') {
-            accessibility.push({
-              field: fieldName,
-              issue: 'Missing label',
-              severity: 'high'
-            });
-          }
-
-          if (element.hasAttribute('required') && !element.hasAttribute('aria-required')) {
-            accessibility.push({
-              field: fieldName,
-              issue: 'Missing aria-required attribute',
-              severity: 'medium'
-            });
-          }
-
-          if (!element.id && !element.name) {
-            accessibility.push({
-              field: fieldName,
-              issue: 'Missing id and name attributes',
-              severity: 'medium'
-            });
-          }
-        });
-
-        return { validation, accessibility };
-      }, formId);
-
-      return analysis;
-    } catch (error) {
-      logger.error('Failed to analyze form fields:', error instanceof Error ? error : new Error('Unknown error'));
-      throw error;
-    }
-  }
-
-  async testFormSubmission(formId: string, testData?: Record<string, string>): Promise<{
-    success: boolean;
-    responseStatus: number;
-    responseUrl: string;
-    errors: string[];
-    warnings: string[];
-    submissionTime: number;
-  }> {
-    const page = await this.getPage();
-
-    try {
-      const startTime = Date.now();
-
-      // Fill form with test data
-      const fillResult = await page.evaluate(({ formId, testData }: { formId: string, testData?: Record<string, string> }) => {
-        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
-        if (!form) return { success: false, error: 'Form not found' };
-
-        const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
-
-        inputs.forEach((input) => {
-          const element = input as HTMLInputElement;
-
-          if (element.type === 'hidden' || element.type === 'submit' || element.type === 'button') {
-            return;
-          }
-
-          const fieldName = element.name || element.id;
-          if (!fieldName) return;
-
-          // Use provided test data or generate appropriate test values
-          let testValue = testData?.[fieldName];
-
-          if (!testValue) {
-            switch (element.type) {
-              case 'email':
-                testValue = 'test@example.com';
-                break;
-              case 'tel':
-                testValue = '+1234567890';
-                break;
-              case 'url':
-                testValue = 'https://example.com';
-                break;
-              case 'number':
-                const min = parseFloat(element.min) || 1;
-                const max = parseFloat(element.max) || 100;
-                testValue = String(Math.floor(Math.random() * (max - min) + min));
-                break;
-              case 'date':
-                testValue = new Date().toISOString().split('T')[0];
-                break;
-              case 'checkbox':
-                element.checked = true;
-                return;
-              case 'radio':
-                // Only select the first radio button in each group
-                const radios = form.querySelectorAll(`input[type="radio"][name="${element.name}"]`);
-                if (radios[0] === element) {
-                  element.checked = true;
-                }
-                return;
-              default:
-                testValue = element.placeholder || `Test ${fieldName}`;
-            }
-          }
-
-          if (element.tagName === 'SELECT') {
-            const selectElement = input as HTMLSelectElement;
-            if (selectElement.options.length > 1) {
-              selectElement.selectedIndex = 1; // Skip the first option (usually placeholder)
-            }
-          } else {
-            element.value = testValue;
-          }
-        });
-
-        return { success: true, error: null };
-      }, { formId, testData }) as { success: boolean; error: string | null };
-
-      if (!fillResult.success) {
-        return {
-          success: false,
-          responseStatus: 0,
-          responseUrl: '',
-          errors: [fillResult.error || 'Failed to fill form'],
-          warnings: [],
-          submissionTime: Date.now() - startTime
-        };
-      }
-
-      // Set up response listener
-      let responseReceived = false;
-      let responseStatus = 0;
-      let responseUrl = '';
-      const errors: string[] = [];
-      const warnings: string[] = [];
-
-      const responsePromise = new Promise<void>((resolve) => {
-        page.on('response', (response) => {
-          responseStatus = response.status();
-          responseUrl = response.url();
-          responseReceived = true;
-          resolve();
-        });
-      });
-
-      // Submit the form
-      await page.evaluate((formId) => {
-        const form = document.querySelector(`#${formId}`) || document.querySelectorAll('form')[parseInt(formId.replace('form-', ''))];
-        if (form) {
-          (form as HTMLFormElement).submit();
-        }
-      }, formId);
-
-      // Wait for response or timeout
-      await Promise.race([
-        responsePromise,
-        new Promise((resolve) => setTimeout(resolve, 10000)) // 10 second timeout
-      ]);
-
-      if (!responseReceived) {
-        warnings.push('No response received within timeout');
-      }
-
-      if (responseStatus >= 400) {
-        errors.push(`HTTP error: ${responseStatus}`);
-      }
-
-      return {
-        success: responseReceived && responseStatus < 400,
-        responseStatus,
-        responseUrl,
-        errors,
-        warnings,
-        submissionTime: Date.now() - startTime
-      };
-
-    } catch (error) {
-      logger.error('Failed to test form submission:', error instanceof Error ? error : new Error('Unknown error'));
-      return {
-        success: false,
-        responseStatus: 0,
-        responseUrl: '',
-        errors: [error instanceof Error ? error.message : 'Unknown error occurred'],
-        warnings: [],
-        submissionTime: Date.now()
-      };
-    }
-  }
-
+  /**
+   * Destroy current page and cleanup resources
+   * Important for memory management
+   */
   private async destroyCurrentPage(): Promise<void> {
-    if (this.activePage && !this.activePage.isClosed()) {
+    if (this.currentPage && !this.currentPage.isClosed()) {
       try {
-        await this.activePage.close();
-        this.pageStats.destroyed++;
+        await this.currentPage.close();
+        this.pageCount = Math.max(0, this.pageCount - 1);
+        logger.info(`Page destroyed (remaining: ${this.pageCount})`);
       } catch (error) {
-        logger.debug('Error closing page:', { message: error instanceof Error ? error.message : 'Unknown error' });
+        logger.error('Failed to destroy page:', error);
       }
-      this.activePage = null;
     }
+    this.currentPage = null;
   }
 
+  /**
+   * Cleanup all resources
+   * Should be called when PageManager is no longer needed
+   */
   async destroy(): Promise<void> {
     await this.destroyCurrentPage();
+    logger.info('PageManager destroyed');
   }
 
-  getStats(): PageStats {
-    return { ...this.pageStats };
-  }
-
-  getCurrentPage(): Page | null {
-    return this.activePage && !this.activePage.isClosed() ? this.activePage : null;
-  }
-
-  isPageActive(): boolean {
-    return this.activePage !== null && !this.activePage.isClosed();
+  /**
+   * Get current page count for monitoring
+   * Useful for memory management tracking
+   */
+  getPageCount(): number {
+    return this.pageCount;
   }
 }

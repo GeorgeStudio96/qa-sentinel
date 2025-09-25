@@ -1,87 +1,25 @@
 /**
  * Webflow API Client using official Webflow SDK
  * Handles authenticated requests to Webflow API v2.0.0
+ *
+ * NOTE: ESLint no-explicit-any rule is disabled for this file because
+ * official Webflow SDK TypeScript types don't match the real API responses:
+ * - SDK types use Date objects, real API returns ISO strings
+ * - SDK types use complex Domain objects, real API returns simple strings
+ * - Our interfaces are based on actual API testing and are more accurate
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { WebflowClient } from 'webflow-api';
-
-export interface WebflowSite {
-  id: string;
-  displayName: string;
-  shortName: string;
-  domain: string;
-  workspaceId: string;
-  createdOn: string;
-  lastUpdated: string;
-  publishedOn?: string;
-  customDomains: string[];
-  previewUrl: string;
-  timezone: string;
-  locales: {
-    primary: string;
-    secondary: string[];
-  };
-}
-
-export interface WebflowPage {
-  id: string;
-  siteId: string;
-  title: string;
-  slug: string;
-  parentId?: string;
-  localeId: string;
-  createdOn: string;
-  lastUpdated: string;
-  lastPublished?: string;
-  canBranch: boolean;
-  seo: {
-    title?: string;
-    description?: string;
-  };
-  openGraph: {
-    title?: string;
-    titleCopied?: boolean;
-    description?: string;
-    descriptionCopied?: boolean;
-  };
-}
-
-export interface WebflowForm {
-  id: string;
-  siteId: string;
-  name: string;
-  pageId?: string;
-  workspaceId: string;
-  fields: WebflowFormField[];
-}
-
-export interface WebflowFormField {
-  id: string;
-  displayName: string;
-  slug: string;
-  type: 'PlainText' | 'Email' | 'Phone' | 'Number' | 'TextArea' | 'Checkbox' | 'Radio' | 'Select' | 'MultiSelect' | 'FileUpload' | 'Date' | 'DateTime';
-  isRequired: boolean;
-  placeholder?: string;
-  helpText?: string;
-  options?: string[];
-}
-
-export interface WebflowCollection {
-  id: string;
-  displayName: string;
-  slug: string;
-  singularName: string;
-  fields: WebflowCollectionField[];
-}
-
-export interface WebflowCollectionField {
-  id: string;
-  displayName: string;
-  slug: string;
-  type: string;
-  isRequired: boolean;
-  editable: boolean;
-}
+import type {
+  WebflowSite,
+  WebflowPage,
+  WebflowForm,
+  WebflowFormField,
+  WebflowCollection,
+  WebflowCollectionField,
+} from './types';
 
 /**
  * Enhanced Webflow API Client using official SDK
@@ -101,23 +39,28 @@ export class WebflowApiClient {
   async getSites(): Promise<WebflowSite[]> {
     try {
       const response = await this.webflow.sites.list();
-      return (response.sites || []).map((site: any) => ({
+      return (response.sites || []).map((site: any /* Official SDK types don't match real API responses */) => ({
+        // Direct mapping from real API response
         id: site.id,
+        workspaceId: site.workspaceId,
         displayName: site.displayName,
         shortName: site.shortName,
-        domain: site.defaultDomain || site.domain,
-        workspaceId: site.workspaceId,
+        previewUrl: site.previewUrl,
+        timeZone: site.timeZone,
         createdOn: site.createdOn,
         lastUpdated: site.lastUpdated,
-        publishedOn: site.lastPublished,
+        lastPublished: site.lastPublished,
+        parentFolderId: site.parentFolderId,
         customDomains: site.customDomains || [],
-        previewUrl: site.previewUrl || `https://${site.shortName}.webflow.io`,
-        timezone: site.timeZone || 'UTC',
+        dataCollectionEnabled: site.dataCollectionEnabled,
+        dataCollectionType: site.dataCollectionType,
+        // Computed fields for our app
+        domain: site.customDomains?.length > 0 ? site.customDomains[0] : `${site.shortName}.webflow.io`,
         locales: {
-          primary: site.locales?.primary?.id || 'en',
-          secondary: site.locales?.secondary?.map((l: any) => l.id) || []
+          primary: 'en', // Default since not in basic API response
+          secondary: []
         }
-      }));
+      } as WebflowSite));
     } catch (error) {
       throw new Error(`Failed to fetch sites: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -128,24 +71,29 @@ export class WebflowApiClient {
    */
   async getSite(siteId: string): Promise<WebflowSite> {
     try {
-      const site: any = await this.webflow.sites.get(siteId);
+      const site: any /* Official SDK types don't match real API responses */ = await this.webflow.sites.get(siteId);
       return {
+        // Direct mapping from real API response
         id: site.id,
+        workspaceId: site.workspaceId,
         displayName: site.displayName,
         shortName: site.shortName,
-        domain: site.defaultDomain || site.domain,
-        workspaceId: site.workspaceId,
+        previewUrl: site.previewUrl,
+        timeZone: site.timeZone,
         createdOn: site.createdOn,
         lastUpdated: site.lastUpdated,
-        publishedOn: site.lastPublished,
+        lastPublished: site.lastPublished,
+        parentFolderId: site.parentFolderId,
         customDomains: site.customDomains || [],
-        previewUrl: site.previewUrl || `https://${site.shortName}.webflow.io`,
-        timezone: site.timeZone || 'UTC',
+        dataCollectionEnabled: site.dataCollectionEnabled,
+        dataCollectionType: site.dataCollectionType,
+        // Computed fields for our app
+        domain: site.customDomains?.length > 0 ? site.customDomains[0] : `${site.shortName}.webflow.io`,
         locales: {
-          primary: site.locales?.primary?.id || 'en',
-          secondary: site.locales?.secondary?.map((l: any) => l.id) || []
+          primary: 'en',
+          secondary: []
         }
-      };
+      } as WebflowSite;
     } catch (error) {
       throw new Error(`Failed to fetch site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -157,28 +105,33 @@ export class WebflowApiClient {
   async getPages(siteId: string): Promise<WebflowPage[]> {
     try {
       const response = await this.webflow.pages.list(siteId);
-      return (response.pages || []).map((page: any) => ({
+      return (response.pages || []).map((page: any /* Official SDK types don't match real API responses */) => ({
+        // Direct mapping from real API response
         id: page.id,
         siteId: page.siteId,
         title: page.title,
         slug: page.slug,
-        parentId: page.parentId || undefined,
-        localeId: page.localeId,
         createdOn: page.createdOn,
         lastUpdated: page.lastUpdated,
-        lastPublished: page.lastPublished,
+        archived: page.archived,
+        draft: page.draft,
         canBranch: page.canBranch,
+        isBranch: page.isBranch,
+        publishedPath: page.publishedPath,
         seo: {
-          title: page.seo?.title,
-          description: page.seo?.description
+          title: page.seo?.title
         },
         openGraph: {
           title: page.openGraph?.title,
           titleCopied: page.openGraph?.titleCopied,
           description: page.openGraph?.description,
           descriptionCopied: page.openGraph?.descriptionCopied
-        }
-      }));
+        },
+        // Optional fields
+        parentId: page.parentId,
+        localeId: page.localeId,
+        lastPublished: page.lastPublished
+      } as WebflowPage));
     } catch (error) {
       throw new Error(`Failed to fetch pages for site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -216,23 +169,26 @@ export class WebflowApiClient {
   async getForms(siteId: string): Promise<WebflowForm[]> {
     try {
       const response = await this.webflow.forms.list(siteId);
-      return (response.forms || []).map((form: any) => ({
+      return (response.forms || []).map((form: any /* SDK doesn't export compatible response types */) => ({
+        // Direct mapping from real API response
         id: form.id,
         siteId: form.siteId,
-        name: form.name,
-        pageId: form.pageId || undefined,
+        siteDomainId: form.siteDomainId,
+        pageId: form.pageId,
+        formElementId: form.formElementId,
+        pageName: form.pageName,
         workspaceId: form.workspaceId,
-        fields: form.fields?.map((field: any) => ({
-          id: field.id,
-          displayName: field.displayName,
-          slug: field.slug,
-          type: field.type as WebflowFormField['type'],
-          isRequired: field.isRequired,
-          placeholder: field.placeholder,
-          helpText: field.helpText,
-          options: field.options
-        })) || []
-      }));
+        componentId: form.componentId,
+        displayName: form.displayName,
+        createdOn: form.createdOn,
+        lastUpdated: form.lastUpdated,
+        // Convert fields object to the expected structure
+        fields: form.fields || {},
+        responseSettings: form.responseSettings || {
+          redirectMethod: 'GET',
+          sendEmailConfirmation: false
+        }
+      } as WebflowForm));
     } catch (error) {
       throw new Error(`Failed to fetch forms for site ${siteId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -243,24 +199,26 @@ export class WebflowApiClient {
    */
   async getForm(formId: string): Promise<WebflowForm> {
     try {
-      const form: any = await this.webflow.forms.get(formId);
+      const form: any /* SDK doesn't export compatible response types */ = await this.webflow.forms.get(formId);
       return {
+        // Direct mapping from real API response
         id: form.id,
         siteId: form.siteId,
-        name: form.name,
-        pageId: form.pageId || undefined,
+        siteDomainId: form.siteDomainId,
+        pageId: form.pageId,
+        formElementId: form.formElementId,
+        pageName: form.pageName,
         workspaceId: form.workspaceId,
-        fields: form.fields?.map((field: any) => ({
-          id: field.id,
-          displayName: field.displayName,
-          slug: field.slug,
-          type: field.type as WebflowFormField['type'],
-          isRequired: field.isRequired,
-          placeholder: field.placeholder,
-          helpText: field.helpText,
-          options: field.options
-        })) || []
-      };
+        componentId: form.componentId,
+        displayName: form.displayName,
+        createdOn: form.createdOn,
+        lastUpdated: form.lastUpdated,
+        fields: form.fields || {},
+        responseSettings: form.responseSettings || {
+          redirectMethod: 'GET',
+          sendEmailConfirmation: false
+        }
+      } as WebflowForm;
     } catch (error) {
       throw new Error(`Failed to fetch form ${formId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -272,12 +230,12 @@ export class WebflowApiClient {
   async getCollections(siteId: string): Promise<WebflowCollection[]> {
     try {
       const response = await this.webflow.collections.list(siteId);
-      return (response.collections || []).map((collection: any) => ({
+      return (response.collections || []).map((collection: any /* SDK doesn't export compatible response types */) => ({
         id: collection.id,
         displayName: collection.displayName,
         slug: collection.slug,
         singularName: collection.singularName,
-        fields: collection.fields?.map((field: any) => ({
+        fields: collection.fields?.map((field: any /* SDK field structure varies */) => ({
           id: field.id,
           displayName: field.displayName,
           slug: field.slug,
@@ -296,7 +254,7 @@ export class WebflowApiClient {
    */
   async testConnection(): Promise<{
     success: boolean;
-    user?: any;
+    user?: { id: string; email: string; };
     sitesCount?: number;
     error?: string
   }> {

@@ -6,7 +6,7 @@
  * Usage: tsx scripts/test-webflow-integration.ts
  */
 
-import { createWebflowClient, validateSiteTokenFormat } from '../lib/api/webflow/client';
+import { validateSiteTokenFormat, FastifyWebflowClient } from '../lib/api/webflow/client';
 
 async function testFastifyEndpoints() {
   console.log('🧪 Testing Fastify Webflow Endpoints...\n');
@@ -152,7 +152,7 @@ async function testDirectApiClient() {
   }
 
   try {
-    const client = createWebflowClient(siteToken);
+    const client = new FastifyWebflowClient(siteToken);
 
     console.log('1. Testing token validation...');
     const validation = await client.validateSiteToken();

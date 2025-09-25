@@ -4,7 +4,9 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { createWebflowClient, validateSiteTokenFormat } from './client';
+import { validateSiteTokenFormat, FastifyWebflowClient } from './client';
+import { chromium } from 'playwright';
+import { runAllCheckers, CheckerContext } from '../../backend/checkers';
 
 interface ValidateTokenRequest {
   Body: {
@@ -49,7 +51,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
           type: 'object',
           required: ['siteToken'],
           properties: {
-            siteToken: { type: 'string', minLength: 40 }
+            siteToken: { type: 'string', minLength: 32 }
           }
         }
       }
@@ -66,7 +68,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
         }
 
         // Create client and validate token
-        const client = createWebflowClient(siteToken);
+        const client = new FastifyWebflowClient(siteToken);
         const validation = await client.validateSiteToken();
 
         if (!validation.valid) {
@@ -102,7 +104,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
           type: 'object',
           required: ['siteToken'],
           properties: {
-            siteToken: { type: 'string', minLength: 40 },
+            siteToken: { type: 'string', minLength: 32 },
             siteId: { type: 'string' },
             analysisOptions: {
               type: 'object',
@@ -123,7 +125,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
 
       try {
         // Create client and validate token first
-        const client = createWebflowClient(siteToken);
+        const client = new FastifyWebflowClient(siteToken);
         const validation = await client.validateSiteToken();
 
         if (!validation.valid) {
@@ -136,40 +138,110 @@ export async function webflowRoutes(fastify: FastifyInstance) {
         const siteInfo = validation.siteInfo!;
         const targetSiteId = siteId || siteInfo.id;
 
-        // Get pages for analysis
-        const pages = await client.getSitePages(targetSiteId);
-        const pageUrls = await client.getPageUrls(targetSiteId);
+        // Perform real QA analysis with specialized checkers
+        const analyzeUrl = `https://${siteInfo.shortName}.webflow.io`;
+        fastify.log.info(`Starting real QA analysis for: ${analyzeUrl}`);
 
-        fastify.log.info(`Starting analysis for site: ${siteInfo.displayName} (${pageUrls.length} pages)`);
+        const startTime = Date.now();
+        let browser;
+        let analysisResult;
 
-        // TODO: Integrate with existing QA scanning engine
-        // For now, return mock analysis result
-        const analysisResult = {
-          siteInfo,
-          pages,
-          totalPages: pages.length,
-          pageUrls,
-          analysisStatus: 'completed' as const,
-          issues: {
-            performance: [],
-            accessibility: [],
-            seo: [],
-            broken_links: []
-          },
-          metadata: {
-            analyzedAt: new Date().toISOString(),
-            duration: 0,
-            tokensUsed: pageUrls.length
-          },
-          options: {
-            includePages: analysisOptions.includePages !== false,
-            includeForms: analysisOptions.includeForms !== false,
-            includeCollections: analysisOptions.includeCollections === true,
-            performanceChecks: analysisOptions.performanceChecks !== false,
-            accessibilityChecks: analysisOptions.accessibilityChecks !== false,
-            seoChecks: analysisOptions.seoChecks !== false
+        try {
+          // Launch browser for analysis
+          browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+
+          const page = await browser.newPage({
+            viewport: { width: 1280, height: 720 },
+            userAgent: 'Mozilla/5.0 (compatible; QA-Sentinel/1.0)'
+          });
+
+          // Navigate to the site with more forgiving settings
+          await page.goto(analyzeUrl, {
+            waitUntil: 'domcontentloaded', // Don't wait for all resources
+            timeout: 15000 // Shorter timeout
+          });
+
+          // Wait a bit more for critical resources to load
+          await page.waitForTimeout(2000);
+
+          // Create checker context
+          const context: CheckerContext = {
+            page,
+            url: analyzeUrl,
+            viewport: { width: 1280, height: 720 }
+          };
+
+          // Run all QA checks with real analysis
+          const qaReport = await runAllCheckers(context, {
+            brokenLinks: {
+              checkExternalLinks: analysisOptions.includePages !== false,
+              timeout: 10000
+            },
+            seo: {
+              checkMetaTags: analysisOptions.seoChecks !== false,
+              checkHeadings: analysisOptions.seoChecks !== false,
+              checkImages: analysisOptions.seoChecks !== false
+            },
+            performance: {
+              collectMetrics: analysisOptions.performanceChecks !== false,
+              checkImageOptimization: analysisOptions.performanceChecks !== false
+            },
+            accessibility: {
+              checkColorContrast: analysisOptions.accessibilityChecks !== false,
+              checkAltText: analysisOptions.accessibilityChecks !== false,
+              checkFormLabels: analysisOptions.includeForms !== false
+            }
+          });
+
+          const duration = Date.now() - startTime;
+
+          // Structure results in expected format
+          analysisResult = {
+            siteInfo,
+            pages: [], // Keep empty for now as we're analyzing main page
+            totalPages: 1,
+            pageUrls: [analyzeUrl],
+            analysisStatus: qaReport.overallStatus === 'error' ? 'failed' as const : 'completed' as const,
+            issues: {
+              performance: qaReport.issuesByType.performance || [],
+              accessibility: qaReport.issuesByType.accessibility || [],
+              seo: qaReport.issuesByType.seo || [],
+              broken_links: qaReport.issuesByType['broken-links'] || []
+            },
+            metadata: {
+              analyzedAt: new Date().toISOString(),
+              duration,
+              tokensUsed: qaReport.totalIssues,
+              elementsChecked: qaReport.results.reduce((sum, r) => sum + r.metadata.elementsChecked, 0),
+              overallStatus: qaReport.overallStatus
+            },
+            options: {
+              includePages: analysisOptions.includePages !== false,
+              includeForms: analysisOptions.includeForms !== false,
+              includeCollections: analysisOptions.includeCollections === true,
+              performanceChecks: analysisOptions.performanceChecks !== false,
+              accessibilityChecks: analysisOptions.accessibilityChecks !== false,
+              seoChecks: analysisOptions.seoChecks !== false
+            },
+            summary: {
+              totalIssues: qaReport.totalIssues,
+              criticalIssues: qaReport.issuesBySeverity.critical || 0,
+              highIssues: qaReport.issuesBySeverity.high || 0,
+              mediumIssues: qaReport.issuesBySeverity.medium || 0,
+              lowIssues: qaReport.issuesBySeverity.low || 0
+            }
+          };
+
+          fastify.log.info(`QA analysis completed: ${qaReport.totalIssues} issues found in ${duration}ms`);
+
+        } finally {
+          if (browser) {
+            await browser.close();
           }
-        };
+        }
 
         return reply.send({
           success: true,
@@ -204,7 +276,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
           type: 'object',
           required: ['token'],
           properties: {
-            token: { type: 'string', minLength: 40 }
+            token: { type: 'string', minLength: 32 }
           }
         }
       }
@@ -213,7 +285,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
       const { token } = request.query as any;
 
       try {
-        const client = createWebflowClient(token);
+        const client = new FastifyWebflowClient(token);
 
         // Get site info to verify access
         const siteInfo = await client.getSiteInfo(siteId);

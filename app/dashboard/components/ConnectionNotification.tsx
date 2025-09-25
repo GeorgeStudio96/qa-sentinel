@@ -15,26 +15,68 @@ export function ConnectionNotification({ onDismiss }: ConnectionNotificationProp
   } | null>(null)
 
   useEffect(() => {
-    const connected = searchParams.get('connected')
+    const success = searchParams.get('success')
     const error = searchParams.get('error')
+    const sites = searchParams.get('sites')
+    const count = searchParams.get('count')
 
-    if (connected === 'webflow') {
+    if (success === 'webflow_connected') {
+      let message = 'Webflow connected successfully!'
+
+      if (sites && count) {
+        const siteNames = sites.split(',')
+        const siteCount = parseInt(count)
+
+        if (siteCount === 1) {
+          message = `✅ Connected to Webflow! Site "${siteNames[0]}" has been authorized.`
+        } else if (siteCount > 1) {
+          message = `✅ Connected to Webflow! ${siteCount} sites authorized: ${siteNames.join(', ')}`
+        }
+      }
+
       setNotification({
         type: 'success',
-        message: 'Webflow connected successfully! Your sites are now being synced.'
+        message
       })
     } else if (error) {
+      let errorMessage = 'Connection failed'
+
+      // Provide more user-friendly error messages
+      switch(error) {
+        case 'missing_parameters':
+          errorMessage = 'Missing required parameters. Please try again.'
+          break
+        case 'state_mismatch':
+          errorMessage = 'Security check failed. Please try connecting again.'
+          break
+        case 'unauthorized':
+          errorMessage = 'Authentication failed. Please log in and try again.'
+          break
+        case 'configuration_missing':
+          errorMessage = 'Server configuration error. Please contact support.'
+          break
+        case 'token_exchange_failed':
+          errorMessage = 'Failed to complete authorization. Please try again.'
+          break
+        case 'database_error':
+          errorMessage = 'Database error. Please try again later.'
+          break
+        default:
+          errorMessage = `Connection failed: ${error}`
+      }
+
       setNotification({
         type: 'error',
-        message: `Connection failed: ${decodeURIComponent(error)}`
+        message: errorMessage
       })
     }
 
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss success after 10 seconds, errors after 15 seconds
+    const dismissTime = notification?.type === 'success' ? 10000 : 15000
     const timer = setTimeout(() => {
       setNotification(null)
       onDismiss?.()
-    }, 5000)
+    }, dismissTime)
 
     return () => clearTimeout(timer)
   }, [searchParams, onDismiss])

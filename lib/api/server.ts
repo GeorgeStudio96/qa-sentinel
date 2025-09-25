@@ -2,15 +2,15 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import { QAScanningEngine } from '../backend';
+// import { QAScanningEngine } from '../backend';
 import { createLogger } from '../backend/utils/logger';
-import { db } from '../database/supabase-client';
+// import { db } from '../database/supabase-client';
 import { webflowRoutes } from './webflow/routes';
 
 const logger = createLogger('api-server');
 
 // Initialize scanning engine globally
-let scanningEngine: QAScanningEngine;
+// let scanningEngine: QAScanningEngine;
 
 export async function createServer() {
   const server = Fastify({
@@ -36,45 +36,42 @@ export async function createServer() {
     timeWindow: '1 minute'
   });
 
-  // Initialize scanning engine
-  scanningEngine = new QAScanningEngine({
-    browserPoolOptions: {
-      minPoolSize: parseInt(process.env.BROWSER_POOL_MIN_SIZE || '2'),
-      maxPoolSize: parseInt(process.env.BROWSER_POOL_MAX_SIZE || '5'),
-      maxBrowserAge: 30 * 60 * 1000, // 30 minutes
-      healthCheckInterval: 30000 // 30 seconds
-    },
-    memoryMonitorOptions: {
-      warningThreshold: parseInt(process.env.MEMORY_WARNING_THRESHOLD || '400') * 1024 * 1024,
-      criticalThreshold: parseInt(process.env.MEMORY_CRITICAL_THRESHOLD || '600') * 1024 * 1024
-    }
-  });
+  // Initialize scanning engine - TEMPORARILY DISABLED
+  // scanningEngine = new QAScanningEngine({
+  //   browserPoolOptions: {
+  //     minPoolSize: parseInt(process.env.BROWSER_POOL_MIN_SIZE || '2'),
+  //     maxPoolSize: parseInt(process.env.BROWSER_POOL_MAX_SIZE || '5'),
+  //     maxBrowserAge: 30 * 60 * 1000, // 30 minutes
+  //     healthCheckInterval: 30000 // 30 seconds
+  //   },
+  //   memoryMonitorOptions: {
+  //     warningThreshold: parseInt(process.env.MEMORY_WARNING_THRESHOLD || '400') * 1024 * 1024,
+  //     criticalThreshold: parseInt(process.env.MEMORY_CRITICAL_THRESHOLD || '600') * 1024 * 1024
+  //   }
+  // });
 
   // Register Webflow integration routes
   await server.register(webflowRoutes);
 
   // Health check endpoint
   server.get('/api/health', async () => {
-    const health = scanningEngine.getHealthStatus();
-    const stats = scanningEngine.getStats();
-
+    // Simplified health check without scanning engine
     return {
-      status: health.status,
+      status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      checks: health.checks,
-      browser_pool: stats.browserPool,
-      active_scans: stats.activeScans
+      message: 'API server is running (scanning temporarily disabled)'
     };
   });
 
-  // System stats endpoint
-  server.get('/api/stats', async () => {
-    return scanningEngine.getStats();
-  });
+  // System stats endpoint - TEMPORARILY DISABLED
+  // server.get('/api/stats', async () => {
+  //   return scanningEngine.getStats();
+  // });
 
-  // Enhanced scan endpoint with form analysis
+  // Enhanced scan endpoint with form analysis - TEMPORARILY DISABLED
+  /*
   server.post<{
     Body: {
       url: string;
@@ -183,8 +180,10 @@ export async function createServer() {
       };
     }
   });
+  */
 
-  // Single website scan endpoint
+  // Single website scan endpoint - TEMPORARILY DISABLED
+  /*
   server.post<{
     Body: {
       url: string;
@@ -279,8 +278,10 @@ export async function createServer() {
       };
     }
   });
+  */
 
-  // Batch scan endpoint
+  // Batch scan endpoint - TEMPORARILY DISABLED
+  /*
   server.post<{
     Body: {
       urls: string[];
@@ -374,6 +375,7 @@ export async function createServer() {
       };
     }
   });
+  */
 
   // 404 handler
   server.setNotFoundHandler((request, reply) => {
@@ -381,15 +383,8 @@ export async function createServer() {
       success: false,
       error: 'Endpoint not found',
       available_endpoints: [
-        'GET /api/health',
-        'GET /api/stats',
-        'POST /api/scan/forms',
-        'POST /api/scan',
-        'POST /api/scan/batch',
-        'GET /api/webflow/health',
-        'POST /api/webflow/validate-token',
-        'POST /api/webflow/analyze-site',
-        'GET /api/webflow/site/:siteId/status'
+        'GET /api/health'
+        // All other endpoints temporarily disabled
       ]
     });
   });
@@ -413,9 +408,9 @@ export async function createServer() {
 
     try {
       await server.close();
-      if (scanningEngine) {
-        await scanningEngine.destroy();
-      }
+      // if (scanningEngine) {
+      //   await scanningEngine.destroy();
+      // }
       logger.info('Server shutdown complete');
       process.exit(0);
     } catch (error) {

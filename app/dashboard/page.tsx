@@ -5,6 +5,7 @@ import { SitesList } from './components/SitesList'
 import { SiteAnalyzer } from './components/SiteAnalyzer'
 import { ConnectionNotification } from './components/ConnectionNotification'
 import { LogoutButton } from './components/LogoutButton'
+import { WebflowAuthButton } from './components/WebflowAuthButton'
 
 export default async function Dashboard() {
   const supabase = await createClient()
@@ -45,11 +46,12 @@ export default async function Dashboard() {
           <LogoutButton />
         </div>
 
-        {/* Connection notification temporarily hidden - OAuth not active */}
-        {/* <ConnectionNotification /> */}
+        {/* Webflow OAuth connection notifications */}
+        <ConnectionNotification />
 
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-1 space-y-8">
+            <WebflowAuthButton />
             <SiteAnalyzer />
             <AddSiteForm />
           </div>

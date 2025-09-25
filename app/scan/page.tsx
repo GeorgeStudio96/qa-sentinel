@@ -35,49 +35,55 @@ export default function ScanPage() {
   const [progress, setProgress] = useState({ current: 0, total: 0, currentPage: '' })
 
   const handleScanStart = async (url: string, options: Record<string, unknown>) => {
-    setScanStatus('running')
-    setError(null)
-    setScanResult(null)
+    // TEMPORARILY DISABLED - Function does nothing
+    console.log('Scan functionality temporarily disabled');
+    setError('Scanning functionality is temporarily disabled while we rebuild the system')
+    setScanStatus('error')
+    return;
 
-    // Estimate total steps for progress
-    const maxPages = Number(options.maxPages) || 5
-    setProgress({ current: 0, total: maxPages + 2, currentPage: 'Starting scan...' })
+    // setScanStatus('running')
+    // setError(null)
+    // setScanResult(null)
 
-    try {
-      setProgress({ current: 1, total: maxPages + 2, currentPage: 'Discovering pages...' })
+    // // Estimate total steps for progress
+    // const maxPages = Number(options.maxPages) || 5
+    // setProgress({ current: 0, total: maxPages + 2, currentPage: 'Starting scan...' })
 
-      const response = await fetch('/api/scan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url,
-          options
-        })
-      })
+    // try {
+    //   setProgress({ current: 1, total: maxPages + 2, currentPage: 'Discovering pages...' })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Scan failed')
-      }
+    //   const response = await fetch('/api/scan', {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json'
+    //     },
+    //     body: JSON.stringify({
+    //       url,
+    //       options
+    //     })
+    //   })
 
-      setProgress({ current: maxPages + 1, total: maxPages + 2, currentPage: 'Processing results...' })
+    //   if (!response.ok) {
+    //     const errorData = await response.json()
+    //     throw new Error(errorData.error || 'Scan failed')
+    //   }
 
-      const result = await response.json()
+    //   setProgress({ current: maxPages + 1, total: maxPages + 2, currentPage: 'Processing results...' })
 
-      if (!result.success) {
-        throw new Error(result.error || 'Scan failed')
-      }
+    //   const result = await response.json()
 
-      setProgress({ current: maxPages + 2, total: maxPages + 2, currentPage: 'Completed!' })
-      setScanResult(result.data)
-      setScanStatus('completed')
+    //   if (!result.success) {
+    //     throw new Error(result.error || 'Scan failed')
+    //   }
 
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred')
-      setScanStatus('error')
-    }
+    //   setProgress({ current: maxPages + 2, total: maxPages + 2, currentPage: 'Completed!' })
+    //   setScanResult(result.data)
+    //   setScanStatus('completed')
+
+    // } catch (err) {
+    //   setError(err instanceof Error ? err.message : 'Unknown error occurred')
+    //   setScanStatus('error')
+    // }
   }
 
   const handleReset = () => {
