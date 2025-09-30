@@ -205,7 +205,7 @@ export async function webflowRoutes(fastify: FastifyInstance) {
               analyzedAt: new Date().toISOString(),
               duration,
               tokensUsed: qaReport.totalIssues,
-              elementsChecked: qaReport.results.reduce((sum, r) => sum + r.metadata.elementsChecked, 0),
+              elementsChecked: qaReport.results.reduce((sum: number, r: { metadata: { elementsChecked: number } }) => sum + r.metadata.elementsChecked, 0),
               overallStatus: qaReport.overallStatus
             },
             options: {

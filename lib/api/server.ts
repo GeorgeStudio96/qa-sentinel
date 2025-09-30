@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import { createLogger } from '../shared/logger';
 // import { db } from '../database/supabase-client';
 import { webflowRoutes } from './webflow/routes';
+import { formTestingRoutes } from './routes/form-testing';
 
 const logger = createLogger('api-server');
 
@@ -52,6 +53,9 @@ export async function createServer() {
 
   // Register Webflow integration routes
   await server.register(webflowRoutes);
+
+  // Register Form Testing routes
+  await server.register(formTestingRoutes);
 
   // Health check endpoint
   server.get('/api/health', async () => {

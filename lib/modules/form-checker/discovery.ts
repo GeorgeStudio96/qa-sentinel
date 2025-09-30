@@ -54,7 +54,7 @@ export class FormDiscovery {
 
       return report;
     } catch (error) {
-      logger.error('Form discovery failed:', error);
+      logger.error('Form discovery failed:', error as Error);
       throw error;
     }
   }
@@ -100,7 +100,7 @@ export class FormDiscovery {
         },
       };
     } catch (error) {
-      logger.error(`Failed to discover forms for site ${site.displayName}:`, error);
+      logger.error(`Failed to discover forms for site ${site.displayName}:`, error as Error);
       return {
         site,
         forms: [],
@@ -121,42 +121,18 @@ export class FormDiscovery {
     const issues: FormIssue[] = [];
     const fields = Object.values(form.fields || {});
 
-    // Debug: Log form structure to understand the data
-    logger.debug(`Analyzing form: ${form.displayName}`);
-    logger.debug(`Form fields structure:`, JSON.stringify(form.fields, null, 2));
-    logger.debug(`Fields array:`, fields);
-
-    // Calculate metadata
-    // Check for email field in various ways (Webflow might use different naming)
+    // Check for email field
     const hasEmailField = fields.some(f => {
-      // Check multiple possible field type values
-      const typeCheck = f.type?.toLowerCase() === 'email' ||
-                       f.type === 'Email' ||
-                       f.type === 'email';
-
-      // Also check field name as fallback
-      const nameCheck = f.name?.toLowerCase().includes('email') ||
-                       f.displayName?.toLowerCase().includes('email');
-
-      // Log each field for debugging
-      logger.debug(`Field check - name: ${f.name}, displayName: ${f.displayName}, type: ${f.type}, isEmail: ${typeCheck || nameCheck}`);
-
-      return typeCheck || nameCheck;
+      return f.type === 'Email' || f.displayName?.toLowerCase().includes('email');
     });
 
     // Note: Webflow API doesn't return 'required' field status in forms endpoint
-    // This is a limitation of the API - would need to scrape the actual page to check
-    const hasRequiredFields = fields.length > 0; // Assume forms have required fields if they have any fields
-    const hasFileUpload = fields.some(f =>
-      f.type === 'FileUpload' ||
-      f.type === 'file' ||
-      f.type?.toLowerCase() === 'file'
-    );
+    const hasRequiredFields = fields.length > 0;
+    const hasFileUpload = fields.some(f => f.type === 'FileUpload');
     const fieldCount = fields.length;
 
     // Check for missing email field
-    if (!hasEmailField && fieldCount > 0) {  // Only flag if form has fields
-      logger.warn(`Form ${form.displayName} has no email field detected`);
+    if (!hasEmailField && fieldCount > 0) {
       issues.push({
         category: 'missing-fields',
         severity: 'warning',
