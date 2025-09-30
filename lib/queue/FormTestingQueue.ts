@@ -36,8 +36,27 @@ export const formTestingQueue = new Queue<FormTestRequest>('form-testing', {
   },
 });
 
-// Progress storage (in-memory for now, can be moved to Redis if needed)
-const progressStore = new Map<string, FormTestProgress>();
+// Use Redis for progress storage instead of in-memory Map
+// so that Worker and API server can share progress data
+const progressRedis = new Redis({
+  host: 'localhost',
+  port: 6379,
+  maxRetriesPerRequest: null,
+});
+
+async function saveProgress(jobId: string, progress: FormTestProgress): Promise<void> {
+  await progressRedis.set(
+    `form-testing:progress:${jobId}`,
+    JSON.stringify(progress),
+    'EX',
+    600 // Expire after 10 minutes
+  );
+}
+
+async function getProgress(jobId: string): Promise<FormTestProgress | null> {
+  const data = await progressRedis.get(`form-testing:progress:${jobId}`);
+  return data ? JSON.parse(data) : null;
+}
 
 /**
  * Add form testing job to queue
@@ -53,9 +72,9 @@ export async function addFormTestingJob(
 
   logger.info(`Added form testing job: ${job.id}`);
 
-  // Initialize progress
+  // Initialize progress in Redis
   if (job.id) {
-    progressStore.set(job.id, {
+    await saveProgress(job.id, {
       status: 'queued',
       currentStep: 'Queued for processing',
       totalSites: 0,
@@ -71,14 +90,14 @@ export async function addFormTestingJob(
 /**
  * Get job progress
  */
-export function getJobProgress(jobId: string): FormTestProgress | null {
-  return progressStore.get(jobId) || null;
+export async function getJobProgress(jobId: string): Promise<FormTestProgress | null> {
+  return await getProgress(jobId);
 }
 
 /**
  * Create worker to process jobs
  */
-export function createFormTestingWorker(accessToken: string): Worker {
+export function createFormTestingWorker(): Worker {
   const orchestrator = new FormTestingOrchestrator();
 
   const worker = new Worker<FormTestRequest>(
@@ -90,25 +109,27 @@ export function createFormTestingWorker(accessToken: string): Worker {
         // Initialize orchestrator
         await orchestrator.initialize();
 
-        // Update progress callback
+        // Update progress callback (non-blocking)
         const progressCallback = (progress: FormTestProgress) => {
+          logger.info(`Progress callback called for job ${job.id}:`, {
+            status: progress.status,
+            totalForms: progress.totalForms,
+            testedForms: progress.testedForms
+          });
           if (job.id) {
-            progressStore.set(job.id, progress);
+            // Save to Redis (non-blocking)
+            void saveProgress(job.id, progress).then(() => {
+              logger.info(`Progress saved to Redis for job ${job.id}`);
+            });
           }
 
           // Update job progress
           job.updateProgress(progress);
         };
 
-        // Add access token to request
-        const requestWithToken = {
-          ...job.data,
-          userId: accessToken, // Pass access token as userId (will be used by WebflowApiClient)
-        };
-
-        // Run tests
+        // Run tests (access token is already in job.data.userId)
         const results = await orchestrator.runFormTests(
-          requestWithToken,
+          job.data,
           progressCallback
         );
 
@@ -135,11 +156,11 @@ export function createFormTestingWorker(accessToken: string): Worker {
     logger.info(`Job ${job.id} completed successfully`);
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     logger.error(`Job ${job?.id} failed:`, error as Error);
 
     if (job?.id) {
-      progressStore.set(job.id, {
+      await saveProgress(job.id, {
         status: 'failed',
         currentStep: 'Job failed',
         totalSites: 0,

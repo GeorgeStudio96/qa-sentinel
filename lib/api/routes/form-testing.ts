@@ -107,7 +107,7 @@ export async function formTestingRoutes(server: FastifyInstance) {
       try {
         const { jobId } = request.params;
 
-        const progress = getJobProgress(jobId);
+        const progress = await getJobProgress(jobId);
 
         if (!progress) {
           return reply.code(404).send({
@@ -159,8 +159,8 @@ export async function formTestingRoutes(server: FastifyInstance) {
       }
 
       // Poll for updates and stream them
-      const intervalId = setInterval(() => {
-        const progress = getJobProgress(jobId);
+      const intervalId = setInterval(async () => {
+        const progress = await getJobProgress(jobId);
 
         if (!progress) {
           clearInterval(intervalId);

@@ -24,13 +24,19 @@ export default function StatusPage() {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await fetch('/api/auth/webflow/status');
+        console.log('Fetching status...');
+        const response = await fetch('/api/auth/webflow/status', {
+          credentials: 'include'
+        });
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
         setStatus(data);
       } catch (error) {
         console.error('Failed to fetch status:', error);
         setStatus({ connected: false, error: 'Failed to load status' });
       } finally {
+        console.log('Setting loading to false');
         setLoading(false);
       }
     };

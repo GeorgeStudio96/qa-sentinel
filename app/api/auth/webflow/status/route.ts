@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
       connected: true,
       scope: tokenData.scope,
       sites: sites || [],
-      expiresAt: tokenData.expires_at
+      expiresAt: tokenData.expires_at,
+      accessToken: tokenData.access_token
     });
 
   } catch (error) {

@@ -1,216 +1,276 @@
-# AI QA Sentinel - Claude Project Memory
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 🎯 Project Overview
 
-**AI QA Sentinel** - автономный AI QA инженер для автоматического тестирования Webflow и Next.js сайтов.
+**QA Sentinel** - автономный AI QA инженер для автоматического тестирования Webflow сайтов.
 
-### Key Value Proposition
-- Автоматическое обнаружение UI багов, broken links, performance issues
-- Интеграция с Slack, ClickUp для баг-репортов
-- Встроенный dashboard в Webflow Cloud для простых пользователей
-- Масштабирование до тысяч сайтов одновременно
-— Always use ES6 (import instead of require)
+### Core Features
+- Webflow OAuth интеграция для подключения сайтов
+- Автоматическое сканирование: broken links, формы, визуальные баги
+- Form testing с валидацией и реальной отправкой данных
+- Real-time прогресс сканирования
+- Скриншоты проблем
 
-## 📋 Technical Specification
-
-**Original TZ Location:** `/Users/georgeershov/Desktop/ai-assis/AI_QA_Sentinel_Prompt.md`
-
-### Tech Stack (Final Decision)
-- **Backend:** Node.js + Fastify (high-performance, 10k+ RPS)
-- **Frontend:** Next.js 15 (minimal dashboard + Webflow Cloud widget)
+### Tech Stack
+- **Frontend:** Next.js 15 + TypeScript + Tailwind CSS 4
+- **Backend:** Fastify API + BullMQ worker queues
 - **Database:** Supabase (PostgreSQL + Storage + Auth)
 - **Browser Automation:** Playwright
-- **Deployment:** Vercel (frontend) + dedicated backend servers
-- **AI/ML:** OpenAI API для анализа багов
+- **Infrastructure:** Docker (PostgreSQL, Redis, pgAdmin)
+- **Deployment:** Vercel
 
-### Architecture Priorities
-1. **Backend = 80-90% complexity** (browser pool, AI engine, scheduling)
-2. **Frontend = 10-20% complexity** (dashboard + Webflow widget)
+## 🏗️ Architecture
 
-## 📚 Key Documentation
+### Project Structure
+```
+qa-sentinel/
+├── app/                    # Next.js App Router
+│   ├── dashboard/          # Main dashboard pages
+│   ├── test-forms-v2/      # Form testing UI
+│   └── api/                # Next.js API routes
+├── lib/                    # Core business logic
+│   ├── api/                # Fastify server & routes
+│   │   ├── server.ts       # Main Fastify server
+│   │   ├── worker.ts       # BullMQ worker
+│   │   └── routes/         # API route handlers
+│   ├── modules/            # Feature modules
+│   │   ├── form-testing/   # Form testing orchestrator
+│   │   └── form-checker/   # Form validation
+│   ├── integrations/       # External services
+│   │   └── webflow/        # Webflow API client
+│   ├── shared/             # Shared utilities
+│   │   ├── browser-pool/   # Playwright pool management
+│   │   ├── logger/         # Logging utilities
+│   │   └── scanning/       # Scanning utilities
+│   ├── queue/              # BullMQ queue setup
+│   └── supabase/           # Supabase clients
+├── supabase/
+│   └── migrations/         # Database migrations
+├── docs/
+│   ├── docker/             # Docker commands & tips (Russian)
+│   └── plan-update.md      # Current implementation plan
+└── docker-compose.yml      # Local dev infrastructure
+```
 
-### Backend Guidelines (CTO-level)
-**Location:** `docs/backend/`
-- `architecture-principles.md` - ОБЯЗАТЕЛЬНО к прочтению
-- `memory-management.md` - предотвращение memory leaks в Playwright
-- `worker-threads-guide.md` - безопасная многопоточность
-- `performance-optimization.md` - оптимизация для высоких нагрузок
-- `browser-pool-management.md` - управление браузерами
-- `deployment-checklist.md` - production deployment процедуры
+### Dual-Server Architecture
+The project runs **two separate servers**:
 
-### Project Management
-**Location:** `docs/project-management/`
-- `tasks-overview.md` - все задачи проекта
-- `current-sprint.md` - текущие задачи в разработке
-- `backlog.md` - запланированные задачи
-- `completed.md` - выполненные задачи
-- `paused.md` - задачи на паузе
+1. **Next.js Dev Server** (`npm run dev`)
+   - Port: 3000
+   - Handles: UI, SSR, Next.js API routes
 
-## 🔧 Development Standards
+2. **Fastify API Server** (`npm run api:dev`)
+   - Port: 3001
+   - Handles: Heavy operations, Webflow API, browser automation
+   - Worker: `npm run worker:dev` processes background jobs
 
-### Code Style
-- **TypeScript strict mode** - обязательно
-- **ESLint + Prettier** - автоформатирование
-- **2-space indentation** для всех файлов
-- **Functional programming** предпочтительно где возможно
+### Form Testing System
+**Location:** `lib/modules/form-testing/`
 
-### Memory Management (КРИТИЧНО)
-```javascript
-// ✅ ВСЕГДА используй try/finally для browser cleanup
-async function scanWebsite(url) {
+The form testing system is modular and extensible:
+- **FormTestingOrchestrator:** Main coordinator for all form tests
+- **FormValidator:** Validates required fields, email formats
+- **FormDiscoverer:** Finds forms using Webflow API
+- **RealisticDataGenerator:** Generates test data presets
+- **RealSubmissionTester:** Submits forms with real data (optional)
+- **RateLimitHandler:** Handles Webflow API rate limits (429 errors)
+
+## 🚀 Development Commands
+
+### Local Development
+```bash
+# Start Next.js frontend
+npm run dev                          # http://localhost:3000
+
+# Start Fastify backend
+npm run api:dev                      # http://localhost:3001
+
+# Start BullMQ worker
+npm run worker:dev                   # Background job processor
+
+# Type checking
+npm run type-check
+
+# Linting
+npm run lint
+```
+
+### Docker Infrastructure
+```bash
+# Start all services (PostgreSQL, Redis, pgAdmin)
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# View container status (recommended UI)
+lazydocker
+
+# Quick commands reference
+# See docs/docker/commands.md for complete list
+```
+
+**Docker Services:**
+- PostgreSQL: `localhost:5432` (user: postgres, db: qa_sentinel)
+- Redis: `localhost:6380`
+- pgAdmin: `http://localhost:5050` (admin@qa-sentinel.com / admin)
+
+### Testing
+```bash
+# E2E tests
+npm run test:e2e
+
+# Test Webflow integration
+npm run test:webflow
+```
+
+## 🗄️ Database & Migrations
+
+### Supabase CLI
+Project is linked to remote Supabase instance: `uxoajdeybfnrxckemqnp`
+
+```bash
+# Create new migration
+SUPABASE_ACCESS_TOKEN=xxx npx supabase migration new migration_name
+
+# List projects
+SUPABASE_ACCESS_TOKEN=xxx npx supabase projects list
+
+# Get API keys
+SUPABASE_ACCESS_TOKEN=xxx npx supabase projects api-keys --project-ref uxoajdeybfnrxckemqnp
+```
+
+**Note:** For executing SQL migrations, use Supabase Dashboard SQL Editor at:
+`https://supabase.com/dashboard/project/uxoajdeybfnrxckemqnp/sql/new`
+
+Migration files are in `supabase/migrations/` with format: `YYYYMMDDHHMMSS_name.sql`
+
+### Key Tables
+- `sites` - Webflow sites connected by users
+- `webflow_tokens` - OAuth tokens for Webflow API
+- `scans` - QA scan results
+- `findings` - Individual issues found
+- `baselines` - Visual regression baselines
+- `form_test_scenarios` - Test data presets for form testing
+
+## 🔧 Code Patterns
+
+### Always Use ES6 Imports
+```typescript
+// ✅ Correct
+import { createClient } from '@supabase/supabase-js';
+
+// ❌ Wrong
+const { createClient } = require('@supabase/supabase-js');
+```
+
+### Playwright Browser Management
+Always clean up browser instances to prevent memory leaks:
+```typescript
+// ✅ Correct - Always use try/finally
+async function scanWebsite(url: string) {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
     await page.goto(url);
     return await captureScreenshot(page);
   } finally {
-    await browser.close(); // ОБЯЗАТЕЛЬНО
+    await browser.close(); // Critical!
   }
+}
+
+// ❌ Wrong - No cleanup
+async function scanWebsite(url: string) {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto(url);
+  return await captureScreenshot(page);
 }
 ```
 
-### Error Handling
-- **Fail Fast** подход
-- Структурированное логирование (JSON format)
-- Graceful degradation для non-critical features
-- Circuit breaker для external APIs
+### Supabase Client Usage
+Use the correct client based on context:
+```typescript
+// Server-side (API routes, server components)
+import { createServerClient } from '@/lib/supabase/server';
+const supabase = createServerClient();
 
-### Testing
-- Unit tests для business logic
-- Integration tests для browser automation
-- Load testing для performance validation
-- **Минимум 80% code coverage**
+// Client-side (React components)
+import { createBrowserClient } from '@/lib/supabase/client';
+const supabase = createBrowserClient();
+```
 
-## 🚀 Development Workflow
-
-### Task Management Rules
-1. **Micro-tasks only** - максимум 1-4 часа на задачу
-2. **Always update task status** после каждого завершения
-3. **Document dependencies** между задачами
-4. **Small incremental commits** с понятными сообщениями
-
-### Deployment Process
-1. **Pre-deploy validation:** tests, linting, type-check
-2. **Staging deployment** с health checks
-3. **Production deployment** только после full testing
-4. **Rollback strategy** всегда готова
-
-## 📊 Critical Metrics
-
-### Performance Targets
-- Response time p95 < 200ms
-- Memory usage < 512MB per worker
-- Error rate < 0.1%
-- Browser pool utilization < 80%
-- Uptime > 99.9%
-
-### Monitoring Commands
+### Environment Variables
 ```bash
-# Memory analysis
-npm run memory:analyze
+# Required for development
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_ACCESS_TOKEN=sbp_...
 
-# Performance profiling
-npm run perf:profile
+# Webflow OAuth
+WEBFLOW_CLIENT_ID=xxx
+WEBFLOW_CLIENT_SECRET=xxx
+WEBFLOW_AUTH_URL=https://webflow.com/oauth/authorize
 
-# Health check
-curl http://localhost:3000/health
-
-# Force restart
-pm2 restart qa-sentinel
+# API & Worker
+API_PORT=3001
+API_HOST=localhost
 ```
 
-## 🔥 Current Development Phase
+## 📋 Current Implementation: Form Testing with Real Submissions
 
-**Phase:** Webflow OAuth Integration ✅ **WORKING**
-**Focus:** OAuth 2.0 интеграция для доступа к Webflow API
-**Date:** September 2025
+**Active Plan:** See `docs/plan-update.md` for full details
 
-### ✅ Completed OAuth Implementation
-1. ✅ **Webflow App Registration** - App создан с Client ID/Secret
-2. ✅ **OAuth Flow Implementation** - Полный OAuth 2.0 flow работает
-3. ✅ **Database Schema** - Таблицы webflow_tokens и webflow_sites созданы
-4. ✅ **Frontend Integration** - WebflowAuthButton компонент готов
-5. ✅ **Connection Notifications** - Уведомления о подключенных сайтах
-6. ✅ **Error Handling** - Обработка всех edge cases
+### Status
+- ✅ Database migration created (`form_test_scenarios` table)
+- ✅ Migration applied to Supabase
+- 🚧 Implementing RealisticDataGenerator
+- 🚧 Building API routes for preset management
+- 🚧 Creating UI for preset selection
 
-**CURRENT STATUS:** OAuth полностью работает! Пользователи могут подключать свои Webflow сайты через официальный OAuth flow.
+### Key Components to Build
+1. **RealisticDataGenerator** (`lib/modules/form-testing/RealisticDataGenerator.ts`)
+   - Simple presets (test@test.com)
+   - Realistic presets (John Doe, Sarah Smith, etc.)
 
-### 🎯 Next Steps
-1. **Использование токенов** - Получение данных через Webflow API
-2. **Сканирование сайтов** - Интеграция с QA движком
-3. **Масштабирование** - Применение worker threads для параллельной обработки
+2. **RealSubmissionTester** (`lib/modules/form-testing/RealSubmissionTester.ts`)
+   - Smart field matching by name/id/placeholder/type
+   - Screenshots before/after submission
 
-## 🚀 Webflow Site Token Integration
+3. **RateLimitHandler** (`lib/modules/form-testing/RateLimitHandler.ts`)
+   - Handle Webflow 429 errors
+   - Auto-pause for 60 seconds
+   - User-friendly messages
 
-### Новая архитектура
-- **Frontend (Next.js):** Только UI и SiteAnalyzer компонент
-- **Backend (Fastify):** Все Webflow API операции и QA сканирование
-- **Integration:** Site Token вместо OAuth - максимальная простота
+4. **API Routes** (`lib/api/routes/test-scenarios.ts`)
+   - GET `/api/test-scenarios/settings` - list presets
+   - POST `/api/test-scenarios/settings` - create/update
+   - POST `/api/test-scenarios/generate` - generate defaults
 
-### API Endpoints (Fastify)
-```
-GET  /api/webflow/health                    - Health check
-POST /api/webflow/validate-token           - Проверка Site Token
-POST /api/webflow/analyze-site             - Анализ сайта через Webflow API
-GET  /api/webflow/site/:siteId/status      - Статус анализа сайта
-```
+5. **UI Updates** (`app/test-forms-v2/page.tsx`)
+   - Checkbox: "Real submission (creates actual leads)"
+   - Preset dropdown selector
+   - Warning messages
 
-### Пользовательский Flow
-1. **Пользователь** открывает QA Sentinel dashboard
-2. **Вводит Site Token** (получается за ~30 секунд из Webflow)
-3. **Система валидирует** токен и показывает информацию о сайте
-4. **Запускается анализ** - автоматическое сканирование всех страниц
-5. **Результаты** показываются в реальном времени
+### Webflow Rate Limits
+- Starter/Basic: 60 req/min
+- CMS/Business: 120 req/min
+- Form submissions via browser don't count as API requests
+- Only form discovery via API counts toward limits
 
-### Как получить Site Token
-```
-1. Webflow Dashboard → Выбрать сайт → Settings ⚙️
-2. Apps & integrations → API access
-3. Generate API token → Name: "QA Sentinel"
-4. Permissions: Read access (sites, forms, CMS)
-5. Copy token → Paste в QA Sentinel
-```
+## 🔗 Important Links
 
-### Команды для запуска
-```bash
-# 1. Запуск Fastify backend
-npm run api:dev              # http://localhost:3001
-
-# 2. Запуск Next.js frontend
-npm run dev                  # http://localhost:3000
-
-# 3. Тестирование интеграции
-npm run test:webflow         # Проверка всех endpoints
-```
-
-### Task Management Workflow
-**After each task completion:**
-1. Update `docs/project-management/completed.md` with timing data
-2. Move next task from backlog to `current-sprint.md`
-3. Update this section in CLAUDE.md
-4. Commit changes with clear message
-
-## 🆘 Emergency Procedures
-
-### Production Issues
-- **Memory leaks:** See `docs/backend/memory-management.md#emergency-procedures`
-- **Performance degradation:** See `docs/backend/performance-optimization.md#troubleshooting`
-- **Worker failures:** See `docs/backend/worker-threads-guide.md#troubleshooting-guide`
-
-### Quick Debug Commands
-```bash
-# Check running processes
-pm2 list
-
-# View logs
-pm2 logs qa-sentinel
-
-# Memory usage
-free -h && ps aux --sort=-%mem | head -10
-```
+- **Supabase Dashboard:** https://supabase.com/dashboard/project/uxoajdeybfnrxckemqnp
+- **Supabase SQL Editor:** https://supabase.com/dashboard/project/uxoajdeybfnrxckemqnp/sql/new
+- **Webflow Developer Portal:** https://developers.webflow.com
+- **Local pgAdmin:** http://localhost:5050
+- **Docker Documentation:** See `docs/docker/` for Russian commands & tips
 
 ---
 
-**Last Updated:** 2024-09-23
-**Project Status:** Active Development - Foundation Phase
-**Key Contact:** Backend architecture и memory management - критический приоритет
+**Last Updated:** 2025-09-30
+**Current Phase:** Form Testing Implementation
+**Docker Setup:** ✅ Completed (PostgreSQL, Redis, pgAdmin running locally)

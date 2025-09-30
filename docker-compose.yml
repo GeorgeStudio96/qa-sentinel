@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - основная база данных
+  postgres:
+    image: postgres:15-alpine
+    container_name: qa-sentinel-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: qa_sentinel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - qa-sentinel
+
+  # Redis - для очередей BullMQ
+  redis:
+    image: redis:7-alpine
+    container_name: qa-sentinel-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - qa-sentinel
+
+  # pgAdmin - UI для управления PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: qa-sentinel-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@qa-sentinel.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - qa-sentinel
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+
+networks:
+  qa-sentinel:
+    driver: bridge

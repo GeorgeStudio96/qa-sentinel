@@ -54,9 +54,11 @@ export class FormTestingOrchestrator {
     progressCallback?: (progress: FormTestProgress) => void
   ): Promise<FormTestResult[]> {
     logger.info('Starting form testing suite', { userId: request.userId });
+    logger.info(`Progress callback provided: ${!!progressCallback}`);
 
     try {
       // Step 1: Discover all forms
+      logger.info('Sending discovering progress...');
       progressCallback?.({
         status: 'discovering',
         currentStep: 'Discovering forms across sites...',
@@ -72,6 +74,7 @@ export class FormTestingOrchestrator {
 
       const totalSites = new Set(formsToTest.map((f) => f.siteId)).size;
 
+      logger.info('Sending testing progress...');
       progressCallback?.({
         status: 'testing',
         currentStep: `Testing ${formsToTest.length} forms...`,
@@ -98,6 +101,7 @@ export class FormTestingOrchestrator {
 
       logger.info(`Form testing completed. Tested ${results.length} forms`);
 
+      logger.info('Sending completed progress with results...');
       progressCallback?.({
         status: 'completed',
         currentStep: 'Testing completed!',
@@ -133,6 +137,7 @@ export class FormTestingOrchestrator {
     request: FormTestRequest
   ): Promise<FormToTest[]> {
     // Get access token from request (passed from API route)
+    logger.info(`Using access token (first 20 chars): ${request.userId?.substring(0, 20)}...`);
     const webflowClient = new WebflowApiClient(request.userId);
 
     // Get sites
@@ -158,10 +163,13 @@ export class FormTestingOrchestrator {
         // Map forms to pages
         const formsToTest: FormToTest[] = forms.map((form) => {
           const page = pages.find((p) => p.id === form.pageId);
+          // Ensure slug starts with / for correct URL construction
+          const slug = page?.slug || '';
+          const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`;
           return {
             formId: form.id,
             formName: form.displayName,
-            pageUrl: `https://${site.shortName}.webflow.io${page?.slug || ''}`,
+            pageUrl: `https://${site.shortName}.webflow.io${normalizedSlug}`,
             siteId: site.id,
             siteName: site.displayName,
             pageName: page?.title || 'Unknown Page',

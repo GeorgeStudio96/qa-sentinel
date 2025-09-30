@@ -62,6 +62,7 @@ export default function TestFormsV2Page() {
         }
 
         const data = await response.json();
+        console.log('Progress update:', data.progress);
         setProgress(data.progress);
 
         // Check if completed or failed
@@ -77,7 +78,7 @@ export default function TestFormsV2Page() {
       } catch (err) {
         console.error('Error polling progress:', err);
       }
-    }, 1000); // Poll every second
+    }, 500); // Poll every 500ms for more responsive UI
 
     return () => clearInterval(pollInterval);
   }, [jobId, testing]);
@@ -156,6 +157,22 @@ export default function TestFormsV2Page() {
     }
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'text-green-700 font-semibold';
+      case 'failed':
+        return 'text-red-700 font-semibold';
+      case 'testing':
+      case 'discovering':
+      case 'analyzing':
+        return 'text-blue-700 font-semibold';
+      case 'queued':
+      default:
+        return 'text-emerald-700 font-semibold';
+    }
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -163,7 +180,7 @@ export default function TestFormsV2Page() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
             Authentication Required
           </h2>
-          <p className="text-gray-600">Please sign in to test forms.</p>
+          <p className="text-gray-800">Please sign in to test forms.</p>
         </div>
       </div>
     );
@@ -177,7 +194,7 @@ export default function TestFormsV2Page() {
           <h1 className="text-3xl font-bold text-gray-900 mb-4">
             🚀 Advanced Form Testing
           </h1>
-          <p className="text-gray-600 mb-6">
+          <p className="text-gray-800 mb-6">
             High-performance browser-based form testing with real-time progress tracking.
           </p>
 
@@ -225,7 +242,7 @@ export default function TestFormsV2Page() {
 
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <div className="flex justify-between text-sm text-gray-800 mb-2">
                   <span>{progress.currentStep}</span>
                   <span>
                     {progress.testedForms} / {progress.totalForms} forms
@@ -247,11 +264,13 @@ export default function TestFormsV2Page() {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-600">Status:</span>{' '}
-                  <span className="font-medium capitalize">{progress.status}</span>
+                  <span className="text-gray-800">Status:</span>{' '}
+                  <span className={`capitalize ${getStatusColor(progress.status)}`}>
+                    {progress.status}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-gray-600">Sites:</span>{' '}
+                  <span className="text-gray-800">Sites:</span>{' '}
                   <span className="font-medium">
                     {progress.processedSites} / {progress.totalSites}
                   </span>
@@ -296,13 +315,13 @@ export default function TestFormsV2Page() {
               </h3>
               <div className="grid grid-cols-4 gap-4">
                 <div>
-                  <div className="text-sm text-gray-500">Total Forms</div>
+                  <div className="text-sm text-gray-700">Total Forms</div>
                   <div className="text-2xl font-bold text-gray-900">
                     {results.length}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500">Critical Issues</div>
+                  <div className="text-sm text-gray-700">Critical Issues</div>
                   <div className="text-2xl font-bold text-red-600">
                     {results.reduce(
                       (sum, r) =>
@@ -312,7 +331,7 @@ export default function TestFormsV2Page() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500">Warnings</div>
+                  <div className="text-sm text-gray-700">Warnings</div>
                   <div className="text-2xl font-bold text-yellow-600">
                     {results.reduce(
                       (sum, r) =>
@@ -322,7 +341,7 @@ export default function TestFormsV2Page() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500">Total Duration</div>
+                  <div className="text-sm text-gray-700">Total Duration</div>
                   <div className="text-2xl font-bold text-gray-900">
                     {(results.reduce((sum, r) => sum + r.duration, 0) / 1000).toFixed(1)}s
                   </div>
@@ -338,7 +357,7 @@ export default function TestFormsV2Page() {
                     <h3 className="text-lg font-semibold text-gray-900">
                       {result.formName}
                     </h3>
-                    <p className="text-sm text-gray-600">{result.siteName}</p>
+                    <p className="text-sm text-gray-800">{result.siteName}</p>
                     <a
                       href={result.pageUrl}
                       target="_blank"
@@ -348,7 +367,7 @@ export default function TestFormsV2Page() {
                       {result.pageUrl}
                     </a>
                   </div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-gray-700">
                     {(result.duration / 1000).toFixed(2)}s
                   </div>
                 </div>
@@ -356,13 +375,13 @@ export default function TestFormsV2Page() {
                 {/* Test Results */}
                 <div className="grid grid-cols-4 gap-4 mb-4 text-sm">
                   <div>
-                    <span className="text-gray-600">Fields:</span>{' '}
+                    <span className="text-gray-800">Fields:</span>{' '}
                     <span className="font-medium">
                       {result.testResults.fieldCount}
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Email:</span>{' '}
+                    <span className="text-gray-800">Email:</span>{' '}
                     <span
                       className={
                         result.testResults.hasEmailField
@@ -374,7 +393,7 @@ export default function TestFormsV2Page() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Validation:</span>{' '}
+                    <span className="text-gray-800">Validation:</span>{' '}
                     <span
                       className={
                         result.testResults.validationWorks
@@ -386,7 +405,7 @@ export default function TestFormsV2Page() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Required:</span>{' '}
+                    <span className="text-gray-800">Required:</span>{' '}
                     <span className="font-medium">
                       {result.testResults.requiredFieldsCount}
                     </span>

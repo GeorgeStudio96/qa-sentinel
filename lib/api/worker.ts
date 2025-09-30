@@ -8,19 +8,10 @@ import { createLogger } from '../shared/logger';
 
 const logger = createLogger('form-testing-worker');
 
-// Get access token from environment (for testing)
-// In production, this should be retrieved from Supabase per job
-const accessToken = process.env.WEBFLOW_ACCESS_TOKEN || '';
-
-if (!accessToken) {
-  logger.error('WEBFLOW_ACCESS_TOKEN not found in environment');
-  process.exit(1);
-}
-
 logger.info('Starting form testing worker...');
 
-// Create and start worker
-const worker = createFormTestingWorker(accessToken);
+// Create and start worker (access token comes from each job)
+const worker = createFormTestingWorker();
 
 logger.info('Form testing worker started successfully');
 
