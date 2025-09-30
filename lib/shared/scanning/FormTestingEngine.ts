@@ -5,7 +5,7 @@ import {
   FormSubmissionResult,
   FormScanOptions
 } from '../utils/types';
-import { PageManager } from '../browser-pool/PageManagerLegacy';
+import { PageManager } from '../browser-pool/PageManager';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('form-testing-engine');

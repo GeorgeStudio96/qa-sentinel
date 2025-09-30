@@ -68,98 +68,88 @@ export function SiteAnalyzer() {
   })
 
   const validateToken = async () => {
-    // TEMPORARILY DISABLED - Function does nothing
-    console.log('Token validation temporarily disabled');
-    setValidating(false);
-    return;
+    if (!siteToken.trim()) {
+      setError('Please enter a Site Token')
+      return
+    }
 
-    // if (!siteToken.trim()) {
-    //   setError('Please enter a Site Token')
-    //   return
-    // }
+    if (siteToken.length < 40) {
+      setError('Invalid Site Token format')
+      return
+    }
 
-    // if (siteToken.length < 40) {
-    //   setError('Invalid Site Token format')
-    //   return
-    // }
+    setValidating(true)
+    setError(null)
 
-    // setValidating(true)
-    // setError(null)
+    try {
+      // Call Fastify API endpoint
+      const response = await fetch('http://localhost:3001/api/webflow/validate-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ siteToken })
+      })
 
-    // try {
-    //   // Call Fastify API endpoint
-    //   const response = await fetch('http://localhost:3001/api/webflow/validate-token', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify({ siteToken })
-    //   })
+      const data = await response.json()
 
-    //   const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to validate token')
+      }
 
-    //   if (!response.ok) {
-    //     throw new Error(data.error || 'Failed to validate token')
-    //   }
+      if (data.success && data.siteInfo) {
+        setSiteInfo(data.siteInfo)
+        setError(null)
+      } else {
+        setError('Invalid Site Token')
+      }
 
-    //   if (data.success && data.siteInfo) {
-    //     setSiteInfo(data.siteInfo)
-    //     setError(null)
-    //   } else {
-    //     setError('Invalid Site Token')
-    //   }
-
-    // } catch (error) {
-    //   console.error('Token validation error:', error)
-    //   setError(error instanceof Error ? error.message : 'Failed to validate token')
-    //   setSiteInfo(null)
-    // } finally {
-    //   setValidating(false)
-    // }
+    } catch (error) {
+      console.error('Token validation error:', error)
+      setError(error instanceof Error ? error.message : 'Failed to validate token')
+      setSiteInfo(null)
+    } finally {
+      setValidating(false)
+    }
   }
 
   const startAnalysis = async () => {
-    // TEMPORARILY DISABLED - Function does nothing
-    console.log('Site analysis temporarily disabled');
-    setAnalyzing(false);
-    return;
+    if (!siteToken || !siteInfo) return
 
-    // if (!siteToken || !siteInfo) return
+    setAnalyzing(true)
+    setError(null)
 
-    // setAnalyzing(true)
-    // setError(null)
+    try {
+      const response = await fetch('http://localhost:3001/api/webflow/analyze-site', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteToken,
+          siteId: siteInfo.id,
+          analysisOptions
+        })
+      })
 
-    // try {
-    //   const response = await fetch('http://localhost:3001/api/webflow/analyze-site', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify({
-    //       siteToken,
-    //       siteId: siteInfo.id,
-    //       analysisOptions
-    //     })
-    //   })
+      const data = await response.json()
 
-    //   const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to analyze site')
+      }
 
-    //   if (!response.ok) {
-    //     throw new Error(data.error || 'Failed to analyze site')
-    //   }
+      if (data.success && data.analysis) {
+        setAnalysisResult(data.analysis)
+      } else {
+        throw new Error('Analysis failed')
+      }
 
-    //   if (data.success && data.analysis) {
-    //     setAnalysisResult(data.analysis)
-    //   } else {
-    //     throw new Error('Analysis failed')
-    //   }
-
-    // } catch (error) {
-    //   console.error('Site analysis error:', error)
-    //   setError(error instanceof Error ? error.message : 'Failed to analyze site')
-    // } finally {
-    //   setAnalyzing(false)
-    // }
+    } catch (error) {
+      console.error('Site analysis error:', error)
+      setError(error instanceof Error ? error.message : 'Failed to analyze site')
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   const resetForm = () => {

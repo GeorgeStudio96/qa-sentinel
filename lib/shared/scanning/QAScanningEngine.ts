@@ -14,7 +14,7 @@ import {
   InternalLink
 } from '../utils/types';
 import { BrowserPoolManager } from '../browser-pool/BrowserPoolManager';
-import { PageManager } from '../browser-pool/PageManagerLegacy';
+import { PageManager } from '../browser-pool/PageManager';
 import { MemoryMonitor } from '../monitoring/MemoryMonitor';
 import { FormTestingEngine } from './FormTestingEngine';
 import { createLogger } from '../utils/logger';

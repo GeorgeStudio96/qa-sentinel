@@ -428,7 +428,7 @@ export class PageManager {
             const linkUrl = new URL(href);
             isInternal = linkUrl.hostname === currentDomain;
           } catch {
-            isInternal = !!(href && (href.startsWith('/') || href.startsWith('./') || href.startsWith('../')));
+            isInternal = href.startsWith('/') || href.startsWith('./') || href.startsWith('../');
           }
 
           return {

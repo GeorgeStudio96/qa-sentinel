@@ -3,12 +3,12 @@
  * Lightweight wrapper around main WebflowApiClient with Site Token validation
  */
 
-import { WebflowApiClient } from '../../webflow/api-client';
+import { WebflowApiClient } from '../../integrations/webflow/api-client';
 import type {
   WebflowSite,
   WebflowPage,
   SiteTokenValidationResult,
-} from '../../webflow/types';
+} from '../../integrations/webflow/types';
 
 /**
  * Factory function to create WebflowApiClient with Site Token

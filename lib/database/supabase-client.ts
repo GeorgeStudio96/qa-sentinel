@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { createLogger } from '../backend/utils/logger';
+import { createLogger } from '../shared/logger';
 
 const logger = createLogger('supabase-client');
 

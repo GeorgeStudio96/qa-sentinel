@@ -6,8 +6,8 @@
  * Usage: tsx scripts/test-webflow-api.ts
  */
 
-import { WebflowApiClient } from '../lib/webflow/api-client';
-import { validateWebflowCredentials } from '../lib/webflow';
+import { WebflowApiClient } from '../lib/integrations/webflow/api-client';
+import { validateWebflowCredentials } from '../lib/integrations/webflow';
 
 async function main() {
   console.log('🔍 Testing Webflow API Integration...\n');
