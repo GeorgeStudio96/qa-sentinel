@@ -3,8 +3,13 @@
  * Reuses browsers across multiple tests for maximum throughput
  */
 
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
+import { chromium } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import type { Browser, Page, BrowserContext } from 'playwright';
 import { createLogger } from '../logger';
+
+// Apply stealth plugin to hide automation
+chromium.use(StealthPlugin());
 
 const logger = createLogger('browser-pool-optimized');
 
@@ -64,17 +69,15 @@ export class BrowserPoolOptimized {
   }
 
   /**
-   * Create a new browser instance
+   * Create a new browser instance with stealth configuration
    */
   private async createBrowser(): Promise<PooledBrowser> {
     const browser = await chromium.launch({
-      headless: true,
+      headless: false, // Stealth works better in headed mode
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
         '--window-size=1920,1080',
         '--disable-blink-features=AutomationControlled',
       ],
@@ -118,11 +121,11 @@ export class BrowserPoolOptimized {
     pooledBrowser.inUse = true;
     pooledBrowser.lastUsed = Date.now();
 
-    // Create new context
+    // Create new context with realistic browser fingerprint
     const context = await pooledBrowser.browser.newContext({
       viewport: { width: 1920, height: 1080 },
       userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       locale: 'en-US',
       timezoneId: 'America/New_York',
     });

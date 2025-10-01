@@ -1,16 +1,33 @@
 /**
  * Real Submission Tester
- * Handles actual form submissions with realistic data
+ * Handles actual form submissions with realistic data using stealth + human behavior
  */
 
 import type { Page } from 'playwright';
 import { createLogger } from '../../shared/logger';
 import { RateLimitHandler } from './RateLimitHandler';
+import { HumanBehavior } from './HumanBehavior';
+// import { TurnstileSolver } from './TurnstileSolver'; // Uncomment when 2Captcha API key is added
 import type { PresetData, SubmissionResult } from './types';
 
 const logger = createLogger('real-submission-tester');
 
 export class RealSubmissionTester {
+  private humanBehavior: HumanBehavior;
+  // private turnstileSolver?: TurnstileSolver; // Uncomment when 2Captcha API key is added
+
+  constructor() {
+    this.humanBehavior = new HumanBehavior();
+
+    // Initialize 2Captcha solver if API key is provided
+    // const apiKey = process.env.TWOCAPTCHA_API_KEY;
+    // if (apiKey) {
+    //   this.turnstileSolver = new TurnstileSolver(apiKey);
+    //   logger.info('✅ 2Captcha solver initialized');
+    // } else {
+    //   logger.info('ℹ️ 2Captcha not configured (stealth-only mode)');
+    // }
+  }
   /**
    * Submit form with preset data
    */
@@ -100,8 +117,13 @@ export class RealSubmissionTester {
 
       if (value) {
         logger.info(`✅ Matched field to value: "${value.substring(0, 30)}..."`);
-        await this.fillField(field, value, fieldType);
+        await this.fillField(page, field, value, fieldType);
         filledCount++;
+
+        // Human-like delay between fields
+        if (filledCount < fields.length) {
+          await this.humanBehavior.fieldDelay();
+        }
       } else {
         logger.warn(`❌ No match found for field: name="${fieldName}" id="${fieldId}" placeholder="${placeholder}"`);
         unmatchedCount++;
@@ -167,19 +189,23 @@ export class RealSubmissionTester {
   }
 
   /**
-   * Fill individual field
+   * Fill individual field with human-like behavior
    */
   private async fillField(
+    page: Page,
     field: any,
     value: string,
     fieldType?: string | null
   ): Promise<void> {
     try {
       if (fieldType === 'checkbox' || fieldType === 'radio') {
-        await field.check();
+        // Human-like click for checkbox/radio
+        await this.humanBehavior.humanClick(page, field);
       } else {
+        // Clear field first
         await field.clear();
-        await field.fill(value);
+        // Type with human-like behavior (random delays, occasional typos)
+        await this.humanBehavior.humanType(page, field, value);
       }
     } catch (error) {
       logger.warn('Failed to fill field:', { error: error instanceof Error ? error.message : String(error) });
@@ -187,94 +213,199 @@ export class RealSubmissionTester {
   }
 
   /**
-   * Perform actual form submission
+   * Perform actual form submission with stealth + 2Captcha fallback
    */
   private async performSubmission(page: Page): Promise<Partial<SubmissionResult>> {
-    // Find submit button
-    const submitButton = await this.findSubmitButton(page);
+    // Attempt #1: Try stealth submission with human behavior
+    const stealthResult = await this.tryStealthSubmission(page);
 
-    if (!submitButton) {
-      throw new Error('Submit button not found');
+    if (stealthResult.success) {
+      logger.info('✅ Form submitted successfully via STEALTH (FREE)');
+      return stealthResult.data;
     }
 
-    logger.info('Clicking submit button...');
+    // If stealth failed, try 2Captcha fallback (if configured)
+    // if (this.turnstileSolver) {
+    //   logger.warn('⚠️ Stealth submission failed, trying 2Captcha fallback...');
+    //   try {
+    //     const captchaResult = await this.try2CaptchaSubmission(page);
+    //     logger.info('✅ Form submitted successfully via 2CAPTCHA ($0.003)');
+    //     return captchaResult;
+    //   } catch (captchaError) {
+    //     logger.error('❌ 2Captcha fallback also failed:', captchaError);
+    //     throw captchaError;
+    //   }
+    // }
 
-    // Click submit and wait for response
+    // No 2Captcha configured and stealth failed
+    logger.error('❌ Stealth submission failed and 2Captcha is not configured');
+    logger.error('💡 To enable 2Captcha fallback: Add TWOCAPTCHA_API_KEY to .env.local');
+    throw new Error(
+      'Cloudflare Turnstile blocked submission. Enable 2Captcha to bypass (uncomment code in RealSubmissionTester.ts)'
+    );
+  }
+
+  /**
+   * Try submitting form with stealth + human behavior
+   */
+  private async tryStealthSubmission(page: Page): Promise<{
+    success: boolean;
+    data?: Partial<SubmissionResult>;
+  }> {
     try {
-      const [response] = await Promise.all([
-        page.waitForResponse((res) => res.request().method() === 'POST', {
-          timeout: 10000,
-        }),
-        submitButton.click({ force: true }),
-      ]);
+      // Find submit button
+      const submitButton = await this.findSubmitButton(page);
 
-      // Log response details
-      const status = response.status();
-      const url = response.url();
-      logger.info(`POST request sent to: ${url}, status: ${status}`);
+      if (!submitButton) {
+        throw new Error('Submit button not found');
+      }
 
-      if (RateLimitHandler.isRateLimited(status)) {
-        throw { statusCode: status, message: 'Rate limited' };
+      logger.info('Clicking submit button with human-like behavior...');
+
+      // Human-like click on submit button
+      await this.humanBehavior.humanClick(page, submitButton);
+
+      // Wait for response
+      let postUrl: string | undefined;
+      let postStatus: number | undefined;
+
+      try {
+        const response = await page.waitForResponse(
+          (res) => res.request().method() === 'POST',
+          { timeout: 10000 }
+        );
+
+        postStatus = response.status();
+        postUrl = response.url();
+        logger.info(`POST request sent to: ${postUrl}, status: ${postStatus}`);
+
+        if (RateLimitHandler.isRateLimited(postStatus)) {
+          throw { statusCode: postStatus, message: 'Rate limited' };
+        }
+      } catch (error) {
+        logger.warn('No POST response detected, checking for Webflow messages...');
       }
 
       // Wait for Webflow form response messages
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
 
-      const successMessage = await page.locator('.w-form-done').isVisible().catch(() => false);
-      const errorMessage = await page.locator('.w-form-fail').isVisible().catch(() => false);
+      const successMessage = await page
+        .locator('.w-form-done')
+        .isVisible()
+        .catch(() => false);
+      const errorMessage = await page
+        .locator('.w-form-fail')
+        .isVisible()
+        .catch(() => false);
+
+      // Check if POST went to Cloudflare challenges (blocked)
+      const isCloudflareBlocked = postUrl?.includes('challenges.cloudflare.com');
+
+      if (isCloudflareBlocked) {
+        logger.warn('🚫 Cloudflare Turnstile detected - submission blocked');
+        return { success: false };
+      }
 
       if (successMessage) {
-        const successText = await page.locator('.w-form-done').textContent().catch(() => 'Success');
+        const successText = await page
+          .locator('.w-form-done')
+          .textContent()
+          .catch(() => 'Success');
         logger.info(`✅ Webflow success message: "${successText}"`);
         return {
-          responseStatus: status,
-          rateLimited: false,
-          webflowSuccess: true,
+          success: true,
+          data: {
+            responseStatus: postStatus || 200,
+            rateLimited: false,
+            webflowSuccess: true,
+          },
         };
       }
 
       if (errorMessage) {
-        const errorText = await page.locator('.w-form-fail').textContent().catch(() => 'Unknown error');
+        const errorText = await page
+          .locator('.w-form-fail')
+          .textContent()
+          .catch(() => 'Unknown error');
         logger.error(`❌ Webflow error message: "${errorText}"`);
         throw new Error(`Form submission failed: ${errorText}`);
       }
 
-      // No success/error message - log warning
-      logger.warn('⚠️ No Webflow success/error message found after submit. Form may not have been submitted to Webflow.');
-
-      return {
-        responseStatus: status,
-        rateLimited: false,
-        webflowSuccess: false,
-      };
+      // No clear success/failure indicator
+      logger.warn(
+        '⚠️ No Webflow success/error message found. Assuming Cloudflare blocked.'
+      );
+      return { success: false };
     } catch (error: any) {
-      // If button became disabled during submission, check for messages
-      await page.waitForTimeout(2000);
-
-      const successMessage = await page.locator('.w-form-done').isVisible().catch(() => false);
-      const errorMessage = await page.locator('.w-form-fail').isVisible().catch(() => false);
-
-      if (successMessage) {
-        const successText = await page.locator('.w-form-done').textContent().catch(() => 'Success');
-        logger.info(`✅ Webflow success message (fallback): "${successText}"`);
-        return {
-          responseStatus: 200,
-          rateLimited: false,
-          webflowSuccess: true,
-        };
-      }
-
-      if (errorMessage) {
-        const errorText = await page.locator('.w-form-fail').textContent().catch(() => 'Unknown error');
-        logger.error(`❌ Webflow error message (fallback): "${errorText}"`);
-        throw new Error(`Form submission failed: ${errorText}`);
-      }
-
-      // Re-throw the original error
-      logger.error('Form submission error:', error);
-      throw error;
+      logger.error('Stealth submission error:', error);
+      return { success: false };
     }
   }
+
+  /**
+   * Try submitting form with 2Captcha solver
+   * This entire method is commented out until 2Captcha API key is provided
+   */
+  // private async try2CaptchaSubmission(page: Page): Promise<Partial<SubmissionResult>> {
+  //   try {
+  //     // Step 1: Detect Turnstile on the page
+  //     const turnstileInfo = await TurnstileSolver.detectTurnstile(page);
+  //
+  //     if (!turnstileInfo.present) {
+  //       throw new Error('Turnstile not detected on page');
+  //     }
+  //
+  //     if (!turnstileInfo.sitekey) {
+  //       throw new Error('Could not extract Turnstile sitekey');
+  //     }
+  //
+  //     logger.info(`Detected Turnstile with sitekey: ${turnstileInfo.sitekey.substring(0, 20)}...`);
+  //
+  //     // Step 2: Solve Turnstile using 2Captcha
+  //     const token = await this.turnstileSolver!.solve(
+  //       turnstileInfo.sitekey,
+  //       page.url()
+  //     );
+  //
+  //     // Step 3: Inject solved token into form
+  //     await TurnstileSolver.injectToken(page, token);
+  //     logger.info('Token injected, submitting form...');
+  //
+  //     // Step 4: Submit form normally
+  //     const submitButton = await this.findSubmitButton(page);
+  //     if (!submitButton) {
+  //       throw new Error('Submit button not found after solving captcha');
+  //     }
+  //
+  //     await submitButton.click();
+  //
+  //     // Step 5: Wait for success message
+  //     await page.waitForTimeout(3000);
+  //
+  //     const successMessage = await page
+  //       .locator('.w-form-done')
+  //       .isVisible()
+  //       .catch(() => false);
+  //
+  //     if (successMessage) {
+  //       const successText = await page
+  //         .locator('.w-form-done')
+  //         .textContent()
+  //         .catch(() => 'Success');
+  //       logger.info(`✅ Success after 2Captcha: "${successText}"`);
+  //       return {
+  //         responseStatus: 200,
+  //         rateLimited: false,
+  //         webflowSuccess: true,
+  //       };
+  //     }
+  //
+  //     throw new Error('No success message after 2Captcha submission');
+  //   } catch (error: any) {
+  //     logger.error('2Captcha submission failed:', error);
+  //     throw error;
+  //   }
+  // }
 
   /**
    * Find submit button in form
