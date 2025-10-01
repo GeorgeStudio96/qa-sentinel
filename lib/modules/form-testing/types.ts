@@ -4,6 +4,7 @@
 
 export interface FormTestRequest {
   userId: string;
+  accessToken?: string;
   siteIds?: string[];
   options?: FormTestOptions;
 }
@@ -13,6 +14,8 @@ export interface FormTestOptions {
   timeout?: number;
   testCases?: string[];
   skipSlowPages?: boolean;
+  realSubmission?: boolean;
+  selectedPreset?: string;
 }
 
 export interface FormTestResult {
@@ -35,6 +38,16 @@ export interface FormTestResult {
   screenshot?: string;
   duration: number;
   testedAt: string;
+  submissionResult?: SubmissionResult;
+}
+
+export interface SubmissionResult {
+  submitted: boolean;
+  presetUsed?: string;
+  rateLimited?: boolean;
+  pauseDuration?: number;
+  error?: string;
+  responseStatus?: number;
 }
 
 export interface TestCase {
@@ -73,4 +86,25 @@ export interface AIFormReport {
     recommendations: string[];
   }[];
   overallScore: number;
+}
+
+// Test Data Presets
+export interface TestDataPreset {
+  id?: string;
+  userId?: string;
+  presetType: 'simple' | 'realistic';
+  presetName: string;
+  presetData: PresetData;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PresetData {
+  name?: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  message?: string;
+  [key: string]: string | undefined;
 }

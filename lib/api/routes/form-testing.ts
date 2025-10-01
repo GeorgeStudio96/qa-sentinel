@@ -15,11 +15,14 @@ const logger = createLogger('form-testing-routes');
 
 interface TestFormsBody {
   accessToken: string;
+  userId?: string;
   siteIds?: string[];
   options?: {
     maxFormsToTest?: number;
     timeout?: number;
     testCases?: string[];
+    realSubmission?: boolean;
+    selectedPreset?: string;
   };
 }
 
@@ -62,13 +65,14 @@ export async function formTestingRoutes(server: FastifyInstance) {
     },
     async (request: FastifyRequest<{ Body: TestFormsBody }>, reply: FastifyReply) => {
       try {
-        const { accessToken, siteIds, options } = request.body;
+        const { accessToken, userId, siteIds, options } = request.body;
 
         logger.info('Starting form testing job', { siteIds, options });
 
         // Create job request
         const jobRequest: FormTestRequest = {
-          userId: accessToken, // Pass access token as userId
+          userId: userId || accessToken, // Use userId if provided, fallback to accessToken
+          accessToken, // Store accessToken separately
           siteIds,
           options,
         };

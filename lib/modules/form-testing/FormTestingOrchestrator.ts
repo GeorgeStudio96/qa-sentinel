@@ -6,11 +6,15 @@
 import { WebflowApiClient } from '../../integrations/webflow/api-client';
 import { BrowserPoolOptimized } from '../../shared/browser-pool/BrowserPoolOptimized';
 import { FormTester } from './FormTester';
+import { RealisticDataGenerator } from './RealisticDataGenerator';
 import { createLogger } from '../../shared/logger';
+import { createClient } from '@supabase/supabase-js';
 import type {
   FormTestRequest,
   FormTestResult,
   FormTestProgress,
+  TestDataPreset,
+  PresetData,
 } from './types';
 
 const logger = createLogger('form-testing-orchestrator');
@@ -27,6 +31,7 @@ interface FormToTest {
 export class FormTestingOrchestrator {
   private browserPool: BrowserPoolOptimized;
   private formTester: FormTester;
+  private supabase;
 
   constructor() {
     this.browserPool = new BrowserPoolOptimized({
@@ -37,6 +42,10 @@ export class FormTestingOrchestrator {
       pageTimeout: 10000,
     });
     this.formTester = new FormTester();
+    this.supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
   }
 
   /**
@@ -84,9 +93,25 @@ export class FormTestingOrchestrator {
         testedForms: 0,
       });
 
+      // Load preset if real submission is enabled
+      let presetData: PresetData | undefined;
+      let presetName: string | undefined;
+
+      if (request.options?.realSubmission && request.options?.selectedPreset) {
+        const preset = await this.loadPreset(request.userId, request.options.selectedPreset);
+        if (preset) {
+          presetData = preset.presetData;
+          presetName = preset.presetName;
+          logger.info(`Using preset: ${presetName} for real submissions`);
+        }
+      }
+
       // Step 2: Test forms in parallel
       const results = await this.testFormsInParallel(
         formsToTest,
+        request.options?.realSubmission || false,
+        presetData,
+        presetName,
         (testedCount) => {
           progressCallback?.({
             status: 'testing',
@@ -137,8 +162,9 @@ export class FormTestingOrchestrator {
     request: FormTestRequest
   ): Promise<FormToTest[]> {
     // Get access token from request (passed from API route)
-    logger.info(`Using access token (first 20 chars): ${request.userId?.substring(0, 20)}...`);
-    const webflowClient = new WebflowApiClient(request.userId);
+    const accessToken = request.accessToken || request.userId;
+    logger.info(`Using access token (first 20 chars): ${accessToken?.substring(0, 20)}...`);
+    const webflowClient = new WebflowApiClient(accessToken);
 
     // Get sites
     let sites;
@@ -166,10 +192,14 @@ export class FormTestingOrchestrator {
           // Ensure slug starts with / for correct URL construction
           const slug = page?.slug || '';
           const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`;
+          const pageUrl = `https://${site.shortName}.webflow.io${normalizedSlug}`;
+
+          logger.info(`Form URL constructed: ${pageUrl} (slug: "${slug}", normalized: "${normalizedSlug}")`);
+
           return {
             formId: form.id,
             formName: form.displayName,
-            pageUrl: `https://${site.shortName}.webflow.io${normalizedSlug}`,
+            pageUrl,
             siteId: site.id,
             siteName: site.displayName,
             pageName: page?.title || 'Unknown Page',
@@ -192,6 +222,9 @@ export class FormTestingOrchestrator {
    */
   private async testFormsInParallel(
     forms: FormToTest[],
+    realSubmission: boolean,
+    presetData?: PresetData,
+    presetName?: string,
     progressCallback?: (testedCount: number) => void
   ): Promise<FormTestResult[]> {
     logger.info(`Testing ${forms.length} forms in parallel`);
@@ -214,7 +247,14 @@ export class FormTestingOrchestrator {
           const { page, release } = await this.browserPool.acquirePage();
 
           try {
-            const result = await this.formTester.testForm(page, form);
+            const result = await this.formTester.testForm(
+              page,
+              form,
+              10000,
+              realSubmission,
+              presetData,
+              presetName
+            );
             testedCount++;
             progressCallback?.(testedCount);
             return result;
@@ -263,6 +303,43 @@ export class FormTestingOrchestrator {
     }
 
     return results;
+  }
+
+  /**
+   * Load preset from database
+   */
+  private async loadPreset(
+    userId: string,
+    presetName: string
+  ): Promise<TestDataPreset | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from('form_test_scenarios')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('preset_name', presetName)
+        .eq('is_active', true)
+        .single();
+
+      if (error) {
+        logger.error('Error loading preset:', error);
+        return null;
+      }
+
+      return data ? {
+        id: data.id,
+        userId: data.user_id,
+        presetType: data.preset_type,
+        presetName: data.preset_name,
+        presetData: data.preset_data,
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      } : null;
+    } catch (error) {
+      logger.error('Failed to load preset:', error as Error);
+      return null;
+    }
   }
 
   /**

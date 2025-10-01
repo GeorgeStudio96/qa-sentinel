@@ -5,7 +5,8 @@
 
 import { Page } from 'playwright';
 import { createLogger } from '../../shared/logger';
-import type { FormTestResult, TestCase, FormIssue } from './types';
+import { RealSubmissionTester } from './RealSubmissionTester';
+import type { FormTestResult, TestCase, FormIssue, PresetData, SubmissionResult } from './types';
 
 const logger = createLogger('form-tester');
 
@@ -19,13 +20,22 @@ interface FormToTest {
 }
 
 export class FormTester {
+  private realSubmissionTester: RealSubmissionTester;
+
+  constructor() {
+    this.realSubmissionTester = new RealSubmissionTester();
+  }
+
   /**
    * Test a single form on a page
    */
   async testForm(
     page: Page,
     form: FormToTest,
-    timeout = 10000
+    timeout = 10000,
+    realSubmission = false,
+    presetData?: PresetData,
+    presetName?: string
   ): Promise<FormTestResult> {
     const startTime = Date.now();
     logger.info(`Testing form: ${form.formName} on ${form.pageUrl}`);
@@ -57,6 +67,17 @@ export class FormTester {
       const screenshotBuffer = await formElement.screenshot();
       const screenshot = screenshotBuffer.toString('base64');
 
+      // Real submission if requested
+      let submissionResult: SubmissionResult | undefined;
+      if (realSubmission && presetData && presetName) {
+        logger.info(`Performing real submission with preset: ${presetName}`);
+        submissionResult = await this.realSubmissionTester.submitForm(
+          page,
+          presetData,
+          presetName
+        );
+      }
+
       const duration = Date.now() - startTime;
 
       return {
@@ -82,6 +103,7 @@ export class FormTester {
         screenshot,
         duration,
         testedAt: new Date().toISOString(),
+        submissionResult,
       };
     } catch (error) {
       logger.error(`Error testing form ${form.formName}:`, error as Error);

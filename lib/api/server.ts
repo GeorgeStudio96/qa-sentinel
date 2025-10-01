@@ -7,6 +7,7 @@ import { createLogger } from '../shared/logger';
 // import { db } from '../database/supabase-client';
 import { webflowRoutes } from './webflow/routes';
 import { formTestingRoutes } from './routes/form-testing';
+import { testScenariosRoutes } from './routes/test-scenarios';
 
 const logger = createLogger('api-server');
 
@@ -56,6 +57,9 @@ export async function createServer() {
 
   // Register Form Testing routes
   await server.register(formTestingRoutes);
+
+  // Register Test Scenarios routes
+  await server.register(testScenariosRoutes);
 
   // Health check endpoint
   server.get('/api/health', async () => {
@@ -435,7 +439,7 @@ if (require.main === module) {
     try {
       const server = await createServer();
       const port = parseInt(process.env.API_PORT || '3001');
-      const host = process.env.API_HOST || 'localhost';
+      const host = '0.0.0.0'; // Always bind to all interfaces in Docker
 
       await server.listen({ port, host });
       logger.info(`API server listening on http://${host}:${port}`);

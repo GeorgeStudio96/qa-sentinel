@@ -39,6 +39,11 @@ interface FormTestResult {
   screenshot?: string;
 }
 
+interface TestScenario {
+  preset_name: string;
+  preset_type: string;
+}
+
 export default function TestFormsV2Page() {
   const { user } = useAuth();
   const [testing, setTesting] = useState(false);
@@ -46,6 +51,96 @@ export default function TestFormsV2Page() {
   const [progress, setProgress] = useState<FormTestProgress | null>(null);
   const [results, setResults] = useState<FormTestResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [realSubmission, setRealSubmission] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [scenarios, setScenarios] = useState<TestScenario[]>([]);
+  const [loadingScenarios, setLoadingScenarios] = useState(false);
+
+  // Load test scenarios on mount
+  useEffect(() => {
+    if (!user) return;
+
+    const loadScenarios = async () => {
+      setLoadingScenarios(true);
+      console.log('Loading scenarios for user:', user.id);
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_SERVER_URL || 'http://localhost:3001'}/api/test-scenarios/${user.id}`
+        );
+
+        console.log('Scenarios response status:', response.status);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Scenarios loaded:', data);
+
+          // If no scenarios exist, generate defaults
+          if (!data.scenarios || data.scenarios.length === 0) {
+            console.log('No scenarios found, generating defaults for user:', user.id);
+
+            const generateResponse = await fetch(
+              `${process.env.NEXT_PUBLIC_API_SERVER_URL || 'http://localhost:3001'}/api/test-scenarios/generate-defaults`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id }),
+              }
+            );
+
+            console.log('Generate response status:', generateResponse.status);
+
+            if (generateResponse.ok) {
+              const generateData = await generateResponse.json();
+              console.log('Generated scenarios:', generateData);
+              setScenarios(generateData.scenarios || []);
+
+              if (generateData.scenarios?.length > 0) {
+                setSelectedPreset(generateData.scenarios[0].preset_name);
+              }
+            }
+            setLoadingScenarios(false);
+            return;
+          }
+
+          setScenarios(data.scenarios || []);
+
+          // Set first preset as default
+          if (data.scenarios?.length > 0) {
+            setSelectedPreset(data.scenarios[0].preset_name);
+          }
+        } else {
+          // Generate default presets if none exist
+          console.log('No scenarios found, generating defaults for user:', user.id);
+          const generateResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_API_SERVER_URL || 'http://localhost:3001'}/api/test-scenarios/generate-defaults`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id }),
+            }
+          );
+
+          console.log('Generate response status:', generateResponse.status);
+
+          if (generateResponse.ok) {
+            const generateData = await generateResponse.json();
+            console.log('Generated scenarios:', generateData);
+            setScenarios(generateData.scenarios || []);
+
+            if (generateData.scenarios?.length > 0) {
+              setSelectedPreset(generateData.scenarios[0].preset_name);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load scenarios:', err);
+      } finally {
+        setLoadingScenarios(false);
+      }
+    };
+
+    loadScenarios();
+  }, [user]);
 
   // Poll for progress updates
   useEffect(() => {
@@ -108,7 +203,12 @@ export default function TestFormsV2Page() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            userId: user.id, // Real user ID from Supabase Auth
             accessToken: tokenData.accessToken,
+            options: {
+              realSubmission,
+              selectedPreset: realSubmission ? selectedPreset : undefined,
+            },
           }),
         }
       );
@@ -198,14 +298,62 @@ export default function TestFormsV2Page() {
             High-performance browser-based form testing with real-time progress tracking.
           </p>
 
+          {/* Real Submission Options */}
+          <div className="mb-6 space-y-4">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="realSubmission"
+                checked={realSubmission}
+                onChange={(e) => setRealSubmission(e.target.checked)}
+                disabled={testing}
+                className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="realSubmission" className="text-gray-800 font-medium">
+                Отправлять формы реально (создадутся заявки)
+              </label>
+            </div>
+
+            {realSubmission && (
+              <div className="ml-8 space-y-2">
+                <label className="block text-sm font-medium text-gray-800">
+                  Выберите пресет данных:
+                </label>
+                <select
+                  value={selectedPreset}
+                  onChange={(e) => setSelectedPreset(e.target.value)}
+                  disabled={testing || loadingScenarios}
+                  className="block w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {loadingScenarios ? (
+                    <option>Loading scenarios...</option>
+                  ) : scenarios.length === 0 ? (
+                    <option>No scenarios available</option>
+                  ) : (
+                    scenarios.map((scenario) => (
+                      <option key={scenario.preset_name} value={scenario.preset_name}>
+                        {scenario.preset_name} ({scenario.preset_type})
+                      </option>
+                    ))
+                  )}
+                </select>
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-2">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ <strong>Внимание:</strong> При включенной опции будут создаваться реальные заявки в формах!
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={runFormTesting}
-            disabled={testing}
-            className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-              testing
+            disabled={testing || (realSubmission && !selectedPreset)}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors ${testing || (realSubmission && !selectedPreset)
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}
+              }`}
           >
             {testing ? (
               <span className="flex items-center">
@@ -252,11 +400,10 @@ export default function TestFormsV2Page() {
                   <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                     style={{
-                      width: `${
-                        progress.totalForms > 0
+                      width: `${progress.totalForms > 0
                           ? (progress.testedForms / progress.totalForms) * 100
                           : 0
-                      }%`,
+                        }%`,
                     }}
                   />
                 </div>

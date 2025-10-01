@@ -39,8 +39,8 @@ export const formTestingQueue = new Queue<FormTestRequest>('form-testing', {
 // Use Redis for progress storage instead of in-memory Map
 // so that Worker and API server can share progress data
 const progressRedis = new Redis({
-  host: 'localhost',
-  port: 6379,
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
   maxRetriesPerRequest: null,
 });
 

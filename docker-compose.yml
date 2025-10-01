@@ -1,64 +1,45 @@
-version: '3.8'
-
 services:
-  # PostgreSQL - основная база данных
-  postgres:
-    image: postgres:15-alpine
-    container_name: qa-sentinel-postgres
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qa-sentinel-api
     ports:
-      - "5432:5432"
+      - "3001:3001"
+    env_file:
+      - .env.local
     environment:
-      POSTGRES_DB: qa_sentinel
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      - NODE_ENV=development
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    command: npx tsx watch lib/api/server.ts
+    restart: unless-stopped
     networks:
       - qa-sentinel
 
-  # Redis - для очередей BullMQ
-  redis:
-    image: redis:7-alpine
-    container_name: qa-sentinel-redis
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - qa-sentinel
-
-  # pgAdmin - UI для управления PostgreSQL
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: qa-sentinel-pgadmin
-    ports:
-      - "5050:80"
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qa-sentinel-worker
+    env_file:
+      - .env.local
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@qa-sentinel.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      - NODE_ENV=development
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - postgres
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    command: npx tsx watch lib/api/worker.ts
+    restart: unless-stopped
     networks:
       - qa-sentinel
-
-volumes:
-  postgres_data:
-  redis_data:
-  pgadmin_data:
 
 networks:
   qa-sentinel:
